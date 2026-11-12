@@ -20,7 +20,7 @@ echo "=== [1/4] Building 64-Channel ThunderBridge DriverKit Extension (.dext) ==
 bash "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh" --clean --production
 
 echo "=== [2/4] Building Maestro.app (Release) ==="
-swift build --package-path "$REPO_ROOT/Apps/Maestro" -c release --jobs "${MAESTRO_BUILD_JOBS:-4}"
+swift build --package-path "$REPO_ROOT/Apps/Maestro" -c release --arch arm64 --jobs "${MAESTRO_BUILD_JOBS:-4}"
 
 echo "=== [3/4] Building AudioServerPlugin & VolumeProxy ==="
 bash "$REPO_ROOT/Drivers/AudioServerPlugin/Scripts/build.sh"
@@ -35,7 +35,8 @@ clang -o "$BUILD_DIR/MaestroVolumeProxy" "$REPO_ROOT/Drivers/VolumeProxy/Maestro
     -Wall -Wextra -O2
 
 echo "=== [4/4] Assembling, Ad-Hoc Signing & Packaging .pkg ==="
-APP_BINARY="$REPO_ROOT/Apps/Maestro/.build/release/MaestroApp"
+APP_BINARY="$REPO_ROOT/Apps/Maestro/.build/arm64-apple-macosx/release/MaestroApp"
+[ -f "$APP_BINARY" ] || APP_BINARY="$REPO_ROOT/Apps/Maestro/.build/release/MaestroApp"
 APP_RESOURCES="$REPO_ROOT/Apps/Maestro/MaestroApp/Resources"
 APP_BUNDLE="$PAYLOAD_DIR/Applications/Maestro.app"
 
