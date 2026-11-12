@@ -1,0 +1,31 @@
+name: Build 64ch SIP-Off PKG Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-pkg:
+    runs-on: macos-26
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Full Xcode & Verify DriverKit SDK
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          sw_vers
+          xcodebuild -version
+          xcrun --sdk driverkit --show-sdk-path
+          which cmake || brew install cmake
+
+      - name: Build 64ch SIP-Off PKG Installer
+        run: |
+          bash Installer/build-sip-off-pkg.sh
+
+      - name: Upload PKG Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UnofficialSymphonyMaestro-64ch-SIP-Off-PKG
+          path: Installer/build/output/*.pkg
