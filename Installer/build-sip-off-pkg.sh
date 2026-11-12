@@ -1,4 +1,5 @@
 #!/bin/bash
+# build-sip-off-pkg.sh — Build an installable .pkg for SIP-disabled Macs (ad-hoc signed, no Developer ID required)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -8,19 +9,17 @@ PAYLOAD_DIR="$BUILD_DIR/payload"
 OUTPUT_DIR="$BUILD_DIR/output"
 
 VERSION=$(grep -o '"[0-9]*\.[0-9]*\.[0-9]*"' "$REPO_ROOT/Apps/Maestro/MaestroCore/MaestroCore.swift" | tr -d '"' || echo "0.8.34")
-export SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
-SIGN_ID="$SIGNING_IDENTITY"
+BUILD_NUM="1031"
+SIGN_ID="${SIGNING_IDENTITY:--}"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$PAYLOAD_DIR" "$OUTPUT_DIR"
-
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 120" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
 
 echo "=== [1/4] Building 64-Channel ThunderBridge DriverKit Extension (.dext) ==="
 bash "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh" --clean --production
 
 echo "=== [2/4] Building Maestro.app (Release) ==="
-swift build --package-path "$REPO_ROOT/Apps/Maestro" -c release --arch arm64 --jobs "${MAESTRO_BUILD_JOBS:-4}"
+swift build --package-path "$REPO_ROOT/Apps/Maestro" -c release --jobs "${MAESTRO_BUILD_JOBS:-4}"
 
 echo "=== [3/4] Building AudioServerPlugin & VolumeProxy ==="
 bash "$REPO_ROOT/Drivers/AudioServerPlugin/Scripts/build.sh"
@@ -35,8 +34,7 @@ clang -o "$BUILD_DIR/MaestroVolumeProxy" "$REPO_ROOT/Drivers/VolumeProxy/Maestro
     -Wall -Wextra -O2
 
 echo "=== [4/4] Assembling, Ad-Hoc Signing & Packaging .pkg ==="
-APP_BINARY="$REPO_ROOT/Apps/Maestro/.build/arm64-apple-macosx/release/MaestroApp"
-[ -f "$APP_BINARY" ] || APP_BINARY="$REPO_ROOT/Apps/Maestro/.build/release/MaestroApp"
+APP_BINARY="$REPO_ROOT/Apps/Maestro/.build/release/MaestroApp"
 APP_RESOURCES="$REPO_ROOT/Apps/Maestro/MaestroApp/Resources"
 APP_BUNDLE="$PAYLOAD_DIR/Applications/Maestro.app"
 
@@ -140,4 +138,7 @@ DIST_PKG="$OUTPUT_DIR/UnofficialSymphonyMaestro-${VERSION}-64ch-SIP-Off.pkg"
 productbuild --distribution "$DIST_XML" --resources "$SCRIPT_DIR/resources" \
     --package-path "$BUILD_DIR" --version "$VERSION" "$DIST_PKG"
 
-echo "SIP-Off Installer ready: $DIST_PKG"
+echo ""
+echo "============================================================"
+echo "  SIP-Off Installer ready: $DIST_PKG"
+echo "============================================================"

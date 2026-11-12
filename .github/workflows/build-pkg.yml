@@ -5,27 +5,15 @@ on:
   push:
     branches: [ main, master ]
 
-concurrency:
-  group: build-64ch-pkg
-  cancel-in-progress: true
-
 jobs:
   build-pkg:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-26-intel, macos-15-intel, macos-26]
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-26
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 26 & Verify DriverKit SDK
+      - name: Install CMake if needed & Verify DriverKit SDK
         run: |
-          LATEST_XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
-          if [ -z "$LATEST_XCODE" ]; then LATEST_XCODE="/Applications/Xcode.app"; fi
-          echo "Using Xcode: $LATEST_XCODE"
-          sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
           sw_vers
           xcodebuild -version
           xcrun --sdk driverkit --show-sdk-path
@@ -38,5 +26,5 @@ jobs:
       - name: Upload PKG Installer Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UnofficialSymphonyMaestro-64ch-SIP-Off-PKG-${{ matrix.os }}
+          name: UnofficialSymphonyMaestro-64ch-SIP-Off-PKG
           path: Installer/build/output/*.pkg

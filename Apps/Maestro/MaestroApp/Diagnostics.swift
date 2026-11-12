@@ -74,13 +74,13 @@ extension AppState {
         if let deviceInfoSnapshot { return deviceInfoSnapshot }
         guard let device else { return nil }
         return DeviceInfoReport(
-            deviceName: device.identifier.displayName,
+            deviceName: activeDeviceTitle,
             connection: transportType == .thunderbolt ? "Thunderbolt (ThunderBridge)" : "USB Hardware",
             board1: primaryBoardReading,
             board2: secondaryBoardReading,
-            deviceModel: device.identifier.displayName,
+            deviceModel: activeDeviceTitle,
             mode: device.identifier.mode.displayName,
-            channelCount: device.identifier.mode.channelCount
+            channelCount: effectiveChannelCount
         )
     }
 

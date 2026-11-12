@@ -222,6 +222,7 @@ struct OutputControlsView: View {
         @Bindable var state = appState
         VStack(spacing: 0) {
             // Toolbar row — Show/Hide Trims, Reset Trims
+            if !appState.legacyDeviceProfile.isLegacy16X {
             HStack {
                 // Both trim buttons are hidden only when no channel carries a
                 // trim at all (a card pair with zero analog outputs, e.g. an
@@ -293,6 +294,7 @@ struct OutputControlsView: View {
             } message: {
                 Text(resetMonitorMessage)
             }
+            }
 
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 0) {
@@ -351,8 +353,8 @@ struct OutputControlsView: View {
                                         .fill(Color.primary.opacity(0.08))
                                 )
 
-                            if layout.hasSPDIF(slot: 0) { spdifMirror1Dropdown }
-                            if layout.hasSPDIF(slot: 1) { spdifMirror2Dropdown }
+                            if !appState.legacyDeviceProfile.isLegacy16X && layout.hasSPDIF(slot: 0) { spdifMirror1Dropdown }
+                            if !appState.legacyDeviceProfile.isLegacy16X && layout.hasSPDIF(slot: 1) { spdifMirror2Dropdown }
                         }
                         .frame(width: 110)
                         .padding(.vertical, 4)
@@ -531,167 +533,156 @@ struct OutputControlsView: View {
                         Task { await writeMonitorProperty(.outputMute, value: .bool(appState.speakerMuted)) }
                         appState.writeASPMute(appState.speakerMuted)
                     }
-                    outputToggle("D", isOn: $speakerDim, tint: .orange,
-                                 tooltip: Self.dimTooltip("speaker"),
-                                 enabled: speakerControlsEnabled) {
-                        Task { await writeMonitorProperty(.outputDim, value: .bool(speakerDim)) }
-                    }
-                    outputToggle("Σ", isOn: $speakerMono, tint: .purple,
-                                 tooltip: Self.sumTooltip("speaker"),
-                                 enabled: speakerSumEnabled) {
-                        Task { await writeMonitorProperty(.outputSumToMono, value: .bool(speakerMono)) }
+                    if !appState.legacyDeviceProfile.isLegacy16X {
+                        outputToggle("D", isOn: $speakerDim, tint: .orange,
+                                     tooltip: Self.dimTooltip("speaker"),
+                                     enabled: speakerControlsEnabled) {
+                            Task { await writeMonitorProperty(.outputDim, value: .bool(speakerDim)) }
+                        }
+                        outputToggle("Σ", isOn: $speakerMono, tint: .purple,
+                                     tooltip: Self.sumTooltip("speaker"),
+                                     enabled: speakerSumEnabled) {
+                            Task { await writeMonitorProperty(.outputSumToMono, value: .bool(speakerMono)) }
+                        }
                     }
                 }
 
-                // Analog Out Format below the knob, Speaker Select pills inline
-                // to its right — the original's arrangement.
-                HStack(spacing: 3) {
+                if !appState.legacyDeviceProfile.isLegacy16X {
+                    HStack(spacing: 3) {
+                        PillMenu(
+                            text: speakerConfigLabels.first(where: { $0.0 == speakerConfig })?.1
+                                ?? speakerConfigLabels.first?.1 ?? "Line",
+                            fontSize: 8,
+                            pillHeight: 18,
+                            toolTip: "Analog Out Format — how the analog outputs are configured.",
+                            options: speakerConfigLabels.map { val, name in
+                                (name, {
+                                    let oldMode = speakerConfig
+                                    speakerConfig = val
+                                    appState.speakerOutputMode = val
+                                    guard SpeakerOutputLogic.modeChangeClearsMonitorState(from: oldMode,
+                                                                                           to: val) else { return }
+                                    appState.speakerMuted = false
+                                    speakerDim = false
+                                    speakerMono = false
+                                    Task {
+                                        await writeMonitorProperty(.outputMute, value: .bool(false))
+                                        await writeMonitorProperty(.outputDim, value: .bool(false))
+                                        await writeMonitorProperty(.outputSumToMono, value: .bool(false))
+                                        await writeMonitorProperty(.speakerOutputMode, value: .uint32(val))
+                                    }
+                                })
+                            }
+                        )
+                        .frame(maxWidth: .infinity)
+
+                        ForEach(0..<3, id: \.self) { index in
+                            speakerSelectButton(index)
+                        }
+                    }
+                }
+            }
+
+            if !appState.legacyDeviceProfile.isLegacy16X {
+                Divider().opacity(0.3)
+
+                // Headphone 1 section
+                VStack(spacing: 4) {
+                    HStack(spacing: 6) {
+                        RotaryKnobView(
+                            value: $state.hp1Level,
+                            range: -127...0,
+                            step: 1,
+                            label: "Headphone 1",
+                            unit: "dB",
+                            size: 32,
+                            defaultValue: -20,
+                            arcColor: appState.hp1Muted ? .red.opacity(0.4) : Color(red: 0.52, green: 0.69, blue: 0.98),
+                            onUserChange: { level in
+                                guard !isMonitorLoading else { return }
+                                Task { await writeMonitorProperty(.headphone1Level, value: .uint32(UInt32(max(0, -level)))) }
+                            }
+                        )
+                        .help("Headphone Level — controls the output level of Headphone 1.")
+
+                        outputToggle("M", isOn: $state.hp1Muted, tint: .red,
+                                     tooltip: "Mute — silences Headphone 1.") {
+                            Task { await writeMonitorProperty(.headphone1Mute, value: .bool(appState.hp1Muted)) }
+                        }
+                        outputToggle("D", isOn: $hp1Dim, tint: .orange,
+                                     tooltip: Self.dimTooltip("Headphone 1")) {
+                            Task { await writeMonitorProperty(.headphone1Dim, value: .bool(hp1Dim)) }
+                        }
+                        outputToggle("Σ", isOn: $hp1Mono, tint: .purple,
+                                     tooltip: Self.sumTooltip("Headphone 1")) {
+                            Task { await writeMonitorProperty(.headphone1SumToMono, value: .bool(hp1Mono)) }
+                        }
+                    }
+
                     PillMenu(
-                        text: speakerConfigLabels.first(where: { $0.0 == speakerConfig })?.1
-                            ?? speakerConfigLabels.first?.1 ?? "Line",
+                        text: hpSourceOptions.first(where: { $0.0 == hp1Source })?.1 ?? "Line 1-2",
                         fontSize: 8,
                         pillHeight: 18,
-                        toolTip: "Analog Out Format — how the analog outputs are configured. "
-                               + "Line leaves outputs 1/2 as plain line outputs with level, "
-                               + "Mute, Dim and Sum disabled; Stereo makes them speaker outputs; "
-                               + "2 or 3 Speaker Sets pairs them up for the Speaker Select "
-                               + "buttons; 5.1 and 7.1 need 6 and 8 analog outputs.",
-                        options: speakerConfigLabels.map { val, name in
+                        toolTip: "HP 1 Routing — selects the software outputs routed to Headphone Out 1.",
+                        options: hpSourceOptions.map { val, name in
                             (name, {
-                                let oldMode = speakerConfig
-                                speakerConfig = val
-                                appState.speakerOutputMode = val
-                                guard SpeakerOutputLogic.modeChangeClearsMonitorState(from: oldMode,
-                                                                                       to: val) else { return }
-                                // Legacy clears these controls on every user
-                                // mode transition before applying the new
-                                // format. Keep the UI and both transports in
-                                // the same state even when the hardware was
-                                // previously muted or dimmed.
-                                appState.speakerMuted = false
-                                speakerDim = false
-                                speakerMono = false
-                                Task {
-                                    await writeMonitorProperty(.outputMute, value: .bool(false))
-                                    await writeMonitorProperty(.outputDim, value: .bool(false))
-                                    await writeMonitorProperty(.outputSumToMono, value: .bool(false))
-                                    await writeMonitorProperty(.speakerOutputMode, value: .uint32(val))
-                                }
+                                hp1Source = val
+                                Task { await selectHeadphoneSource(.headphone1, sourceID: val) }
                             })
                         }
                     )
                     .frame(maxWidth: .infinity)
-
-                    ForEach(0..<3, id: \.self) { index in
-                        speakerSelectButton(index)
-                    }
                 }
-            }
 
-            Divider().opacity(0.3)
+                Divider().opacity(0.3)
 
-            // Headphone 1 section — level/mute via AppState for monitor panel sync
-            VStack(spacing: 4) {
-                HStack(spacing: 6) {
-                    RotaryKnobView(
-                        value: $state.hp1Level,
-                        range: -127...0,
-                        step: 1,
-                        label: "Headphone 1",
-                        unit: "dB",
-                        size: 32,
-                        defaultValue: -20,
-                        arcColor: appState.hp1Muted ? .red.opacity(0.4) : Color(red: 0.52, green: 0.69, blue: 0.98),
-                        onUserChange: { level in
-                            guard !isMonitorLoading else { return }
-                            Task { await writeMonitorProperty(.headphone1Level, value: .uint32(UInt32(max(0, -level)))) }
+                // Headphone 2 section
+                VStack(spacing: 4) {
+                    HStack(spacing: 6) {
+                        RotaryKnobView(
+                            value: $state.hp2Level,
+                            range: -127...0,
+                            step: 1,
+                            label: "Headphone 2",
+                            unit: "dB",
+                            size: 32,
+                            defaultValue: -20,
+                            arcColor: appState.hp2Muted ? .red.opacity(0.4) : Color(red: 0.52, green: 0.69, blue: 0.98),
+                            onUserChange: { level in
+                                guard !isMonitorLoading else { return }
+                                Task { await writeMonitorProperty(.headphone2Level, value: .uint32(UInt32(max(0, -level)))) }
+                            }
+                        )
+                        .help("Headphone Level — controls the output level of Headphone 2.")
+
+                        outputToggle("M", isOn: $state.hp2Muted, tint: .red,
+                                     tooltip: "Mute — silences Headphone 2.") {
+                            Task { await writeMonitorProperty(.headphone2Mute, value: .bool(appState.hp2Muted)) }
+                        }
+                        outputToggle("D", isOn: $hp2Dim, tint: .orange,
+                                     tooltip: Self.dimTooltip("Headphone 2")) {
+                            Task { await writeMonitorProperty(.headphone2Dim, value: .bool(hp2Dim)) }
+                        }
+                        outputToggle("Σ", isOn: $hp2Mono, tint: .purple,
+                                     tooltip: Self.sumTooltip("Headphone 2")) {
+                            Task { await writeMonitorProperty(.headphone2SumToMono, value: .bool(hp2Mono)) }
+                        }
+                    }
+
+                    PillMenu(
+                        text: hpSourceOptions.first(where: { $0.0 == hp2Source })?.1 ?? "Line 1-2",
+                        fontSize: 8,
+                        pillHeight: 18,
+                        toolTip: "HP 2 Routing — selects the software outputs routed to Headphone Out 2.",
+                        options: hpSourceOptions.map { val, name in
+                            (name, {
+                                hp2Source = val
+                                Task { await selectHeadphoneSource(.headphone2, sourceID: val) }
+                            })
                         }
                     )
-                    .help("Headphone Level — controls the output level of Headphone 1. "
-                          + "Drag to adjust, double-tap to reset.")
-
-                    outputToggle("M", isOn: $state.hp1Muted, tint: .red,
-                                 tooltip: "Mute — silences Headphone 1.") {
-                        Task { await writeMonitorProperty(.headphone1Mute, value: .bool(appState.hp1Muted)) }
-                    }
-                    outputToggle("D", isOn: $hp1Dim, tint: .orange,
-                                 tooltip: Self.dimTooltip("Headphone 1")) {
-                        Task { await writeMonitorProperty(.headphone1Dim, value: .bool(hp1Dim)) }
-                    }
-                    outputToggle("Σ", isOn: $hp1Mono, tint: .purple,
-                                 tooltip: Self.sumTooltip("Headphone 1")) {
-                        Task { await writeMonitorProperty(.headphone1SumToMono, value: .bool(hp1Mono)) }
-                    }
+                    .frame(maxWidth: .infinity)
                 }
-
-                // HP 1 routing dropdown below knob
-                PillMenu(
-                    text: hpSourceOptions.first(where: { $0.0 == hp1Source })?.1 ?? "Line 1-2",
-                    fontSize: 8,
-                    pillHeight: 18,
-                    toolTip: "HP 1 Routing — selects the software outputs routed to "
-                           + "Headphone Out 1.",
-                    options: hpSourceOptions.map { val, name in
-                        (name, {
-                            hp1Source = val
-                            Task { await selectHeadphoneSource(.headphone1, sourceID: val) }
-                        })
-                    }
-                )
-                .frame(maxWidth: .infinity)
-            }
-
-            Divider().opacity(0.3)
-
-            // Headphone 2 section — level/mute via AppState for monitor panel sync
-            VStack(spacing: 4) {
-                HStack(spacing: 6) {
-                    RotaryKnobView(
-                        value: $state.hp2Level,
-                        range: -127...0,
-                        step: 1,
-                        label: "Headphone 2",
-                        unit: "dB",
-                        size: 32,
-                        defaultValue: -20,
-                        arcColor: appState.hp2Muted ? .red.opacity(0.4) : Color(red: 0.52, green: 0.69, blue: 0.98),
-                        onUserChange: { level in
-                            guard !isMonitorLoading else { return }
-                            Task { await writeMonitorProperty(.headphone2Level, value: .uint32(UInt32(max(0, -level)))) }
-                        }
-                    )
-                    .help("Headphone Level — controls the output level of Headphone 2. "
-                          + "Drag to adjust, double-tap to reset.")
-
-                    outputToggle("M", isOn: $state.hp2Muted, tint: .red,
-                                 tooltip: "Mute — silences Headphone 2.") {
-                        Task { await writeMonitorProperty(.headphone2Mute, value: .bool(appState.hp2Muted)) }
-                    }
-                    outputToggle("D", isOn: $hp2Dim, tint: .orange,
-                                 tooltip: Self.dimTooltip("Headphone 2")) {
-                        Task { await writeMonitorProperty(.headphone2Dim, value: .bool(hp2Dim)) }
-                    }
-                    outputToggle("Σ", isOn: $hp2Mono, tint: .purple,
-                                 tooltip: Self.sumTooltip("Headphone 2")) {
-                        Task { await writeMonitorProperty(.headphone2SumToMono, value: .bool(hp2Mono)) }
-                    }
-                }
-
-                // HP 2 routing dropdown below knob
-                PillMenu(
-                    text: hpSourceOptions.first(where: { $0.0 == hp2Source })?.1 ?? "Line 1-2",
-                    fontSize: 8,
-                    pillHeight: 18,
-                    toolTip: "HP 2 Routing — selects the software outputs routed to "
-                           + "Headphone Out 2.",
-                    options: hpSourceOptions.map { val, name in
-                        (name, {
-                            hp2Source = val
-                            Task { await selectHeadphoneSource(.headphone2, sourceID: val) }
-                        })
-                    }
-                )
-                .frame(maxWidth: .infinity)
             }
         }
         .padding(.horizontal, 8)
@@ -1297,32 +1288,32 @@ struct OutputChannelStripView: View {
                 .help("\(label) — analog output, D/A conversion channel")
 
             // Stacked PillMenu dropdowns
-            VStack(spacing: 3) {
-                // Analog reference level
-                if let onAnalogRefChange {
+            if appState?.legacyDeviceProfile.isLegacy16X == true {
+                Text("Front Panel")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 18)
+            } else {
+                VStack(spacing: 3) {
+                    if let onAnalogRefChange {
+                        PillMenu(
+                            text: analogRefLabels.first(where: { $0.0 == channel.analogRefLevel })?.1 ?? "+4 dBu",
+                            toolTip: "Analog Ref Level — the analog reference for this D/A channel.",
+                            options: analogRefLabels.map { val, name in
+                                (name, { onAnalogRefChange(val) })
+                            }
+                        )
+                    }
+
                     PillMenu(
-                        text: analogRefLabels.first(where: { $0.0 == channel.analogRefLevel })?.1 ?? "+4 dBu",
-                        toolTip: "Analog Ref Level — the analog reference for this D/A channel. "
-                               + "+4 dBu for 'pro' gear; -10 dBV for semi-pro, hi-fi or musical "
-                               + "instrument gear. Option-click to set every channel at once.",
-                        options: analogRefLabels.map { val, name in
-                            // The parent owns the mutation so the option-click
-                            // fan-out and the trim clamp see one consistent array.
-                            (name, { onAnalogRefChange(val) })
+                        text: digitalRefLabels.first(where: { $0.0 == channel.digitalRefLevel })?.1 ?? "-16 dBfs",
+                        toolTip: "Digital Ref Level — the digital reference for this D/A channel.",
+                        options: digitalRefLabels.map { val, name in
+                            (name, { onDigitalRefChange?(val) })
                         }
                     )
                 }
-
-                // Digital reference level
-                PillMenu(
-                    text: digitalRefLabels.first(where: { $0.0 == channel.digitalRefLevel })?.1 ?? "-16 dBfs",
-                    toolTip: "Digital Ref Level — the digital reference for this D/A channel; "
-                           + "a lower setting leaves more headroom. At -20 dBfs the Trim range "
-                           + "shrinks to 0 … -2 dB. Option-click to set every channel at once.",
-                    options: digitalRefLabels.map { val, name in
-                        (name, { onDigitalRefChange?(val) })
-                    }
-                )
             }
 
             // Constant breathing room (same as input — prevents vertical shift on trim toggle)

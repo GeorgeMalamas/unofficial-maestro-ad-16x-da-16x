@@ -142,6 +142,7 @@ struct InputControlsView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Toolbar row — Show/Hide Trims, Reset Trims (styled like Reset Routing)
+            if !appState.legacyDeviceProfile.isLegacy16X {
             HStack {
                 Button(appState.showInputTrims ? "Hide Trims" : "Show Trims") {
                     appState.showInputTrims.toggle()
@@ -207,6 +208,7 @@ struct InputControlsView: View {
                 }
             } message: {
                 Text(resetConfirmationMessage)
+            }
             }
 
             // Mic Pre controls can be taller than the available window. Let the
@@ -304,7 +306,7 @@ struct InputControlsView: View {
                             // per board (nValue = board index), so each popup
                             // appears only when that slot's module has the jacks
                             // and lists only the pairs that module supplies.
-                            if layout.hasSPDIF(slot: 0) {
+                            if !appState.legacyDeviceProfile.isLegacy16X && layout.hasSPDIF(slot: 0) {
                                 spdifReplaceDropdown(
                                     label: "SPDIF Coax\n1-2 Replace",
                                     value: $spdifReplace1,
@@ -312,7 +314,7 @@ struct InputControlsView: View {
                                 )
                             }
 
-                            if layout.hasSPDIF(slot: 1) {
+                            if !appState.legacyDeviceProfile.isLegacy16X && layout.hasSPDIF(slot: 1) {
                                 spdifReplaceDropdown(
                                     label: "SPDIF Coax\n3-4 Replace",
                                     value: $spdifReplace2,
@@ -1273,58 +1275,57 @@ struct InputChannelStripView: View {
                 )
 
             // Stacked dropdown labels — fixed-width pills, chevron on hover only
-            VStack(spacing: 3) {
-                // Analog reference level
-                if let onInputTypeChange {
-                    PillMenu(
-                        text: inputTypeName(channel.inputType),
-                        toolTip: "Analog Ref — Sets the analog reference level (+4 dBu for pro gear, -10 dBV for consumer)",
-                        options: inputTypeLabels.map { val, name in
-                            // The parent runs the full transition (clamp gain/trim,
-                            // clear phantom when leaving Mic, push to hardware).
-                            (name, { channel.inputType = val; onInputTypeChange(val) })
-                        }
-                    )
-                }
+            if appState?.legacyDeviceProfile.isLegacy16X == true {
+                Text("Front Panel")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 18)
+            } else {
+                VStack(spacing: 3) {
+                    // Analog reference level
+                    if let onInputTypeChange {
+                        PillMenu(
+                            text: inputTypeName(channel.inputType),
+                            toolTip: "Analog Ref — Sets the analog reference level (+4 dBu for pro gear, -10 dBV for consumer)",
+                            options: inputTypeLabels.map { val, name in
+                                (name, { channel.inputType = val; onInputTypeChange(val) })
+                            }
+                        )
+                    }
 
-                // Digital reference level — conditional on the analog level:
-                //   Variable        → hidden (daemon reports the property not implemented)
-                //   Mic/Instrument  → shown but disabled (legacy greys it, never hides it)
-                //   +4 dBu/-10 dBV  → shown and enabled
-                // Evidence: AnalogIn_SymphonyIO_Stream.cpp:768-787, APAnalogInputController.m:854
-                let digitalRefState = InputChannelLogic.digitalRefVisibility(for: level)
-                if digitalRefState != .hidden {
-                    PillMenu(
-                        text: digitalRefLabels.first(where: { $0.0 == channel.digitalRefLevel })?.1 ?? "-16 dBfs",
-                        toolTip: digitalRefState == .disabled
-                            ? "Digital Ref — not available at \(level.displayName) level"
-                            : "Digital Ref — Sets digital headroom reference (-16 dBfs standard, -20 dBfs for more headroom)",
-                        options: digitalRefLabels.map { val, name in
-                            (name, {
-                                channel.digitalRefLevel = val
-                                onDigitalRefChange?(val)
-                            })
-                        }
-                    )
-                    .disabled(digitalRefState == .disabled)
-                    .opacity(digitalRefState == .disabled ? 0.45 : 1)
-                } else {
-                    // Keep the row height stable so neighbouring strips (and the
-                    // ADAT columns that match their height) stay aligned.
-                    Color.clear.frame(height: 18)
-                }
+                    let digitalRefState = InputChannelLogic.digitalRefVisibility(for: level)
+                    if digitalRefState != .hidden {
+                        PillMenu(
+                            text: digitalRefLabels.first(where: { $0.0 == channel.digitalRefLevel })?.1 ?? "-16 dBfs",
+                            toolTip: digitalRefState == .disabled
+                                ? "Digital Ref — not available at \(level.displayName) level"
+                                : "Digital Ref — Sets digital headroom reference (-16 dBfs standard, -20 dBfs for more headroom)",
+                            options: digitalRefLabels.map { val, name in
+                                (name, {
+                                    channel.digitalRefLevel = val
+                                    onDigitalRefChange?(val)
+                                })
+                            }
+                        )
+                        .disabled(digitalRefState == .disabled)
+                        .opacity(digitalRefState == .disabled ? 0.45 : 1)
+                    } else {
+                        Color.clear.frame(height: 18)
+                    }
 
-                // Soft limiter
-                if let onSoftLimitChange {
-                    PillMenu(
-                        text: InputChannelLogic.softLimitName(channel.softLimit, card: boardType),
-                        highlight: channel.softLimit > 0,
-                        highlightColor: .purple,
-                        toolTip: "Soft Limit — Analog limiter that gently catches peaks before clipping",
-                        options: softLimitLabels.map { val, name in
-                            (name, { channel.softLimit = val; onSoftLimitChange(val) })
-                        }
-                    )
+                    // Soft limiter
+                    if let onSoftLimitChange {
+                        PillMenu(
+                            text: InputChannelLogic.softLimitName(channel.softLimit, card: boardType),
+                            highlight: channel.softLimit > 0,
+                            highlightColor: .purple,
+                            toolTip: "Soft Limit — Analog limiter that gently catches peaks before clipping",
+                            options: softLimitLabels.map { val, name in
+                                (name, { channel.softLimit = val; onSoftLimitChange(val) })
+                            }
+                        )
+                    }
                 }
             }
 

@@ -14,10 +14,10 @@ struct ThunderboltCardRoutingTests {
         for destination in UInt8(32)...UInt8(47) {
             #expect(ThunderboltCardRouting.channel(forDestination: destination) == destination - 32)
         }
-        for destination in UInt8(48)...UInt8(63) {
+        for destination in UInt8(48)...UInt8(95) {
             #expect(ThunderboltCardRouting.channel(forDestination: destination) == 16 + (destination - 48))
         }
-        for destination: UInt8 in [0, 31, 64, 96, 128, 192, 236, 255] {
+        for destination: UInt8 in [0, 31, 96, 128, 192, 236, 255] {
             #expect(ThunderboltCardRouting.channel(forDestination: destination) == nil)
         }
     }
@@ -25,15 +25,15 @@ struct ThunderboltCardRoutingTests {
     @Test("DAW playback n is PCI_OUT n; mixer buses are MIXER0_OUT + 2m + side")
     func sourceToSlot() {
         // Sym64RoutingRegisters.h:94 SYMPHONY64_PCI_OUT0 = 64, :159 SYMPHONY64_MIXER0_OUT = 128.
-        for n in UInt8(0)...UInt8(31) {
+        for n in UInt8(0)...UInt8(63) {
             #expect(ThunderboltCardRouting.slot(forSource: n) == 64 + n)
         }
         #expect(ThunderboltCardRouting.slot(forSource: SymphonyIORoutingAddress.mixer0Base) == 128)
         #expect(ThunderboltCardRouting.slot(forSource: SymphonyIORoutingAddress.mixer0Base + 1) == 129)
         #expect(ThunderboltCardRouting.slot(forSource: SymphonyIORoutingAddress.mixer1Base) == 130)
         #expect(ThunderboltCardRouting.slot(forSource: SymphonyIORoutingAddress.mixer1Base + 1) == 131)
-        // Hardware inputs and P2P are not matrix output sources on ThunderBridge.
-        for source: UInt8 in [32, 63, 66, 98, 192, 236, 255] {
+        // Out-of-range and P2P are not matrix output sources on ThunderBridge.
+        for source: UInt8 in [66, 98, 192, 236, 255] {
             #expect(ThunderboltCardRouting.slot(forSource: source) == nil)
         }
     }
@@ -67,7 +67,7 @@ struct ThunderboltCardRoutingTests {
         #expect(ThunderboltCardRouting.route(destination: 50, source: SymphonyIORoutingAddress.none)
                 == .init(channel: 18, slot: 82, enabled: false))
         #expect(ThunderboltCardRouting.route(destination: 200, source: 0) == nil)
-        #expect(ThunderboltCardRouting.route(destination: 34, source: 40) == nil)
+        #expect(ThunderboltCardRouting.route(destination: 34, source: 70) == nil)
     }
 
     @Test("The payload is [channel, slot, enabled]")

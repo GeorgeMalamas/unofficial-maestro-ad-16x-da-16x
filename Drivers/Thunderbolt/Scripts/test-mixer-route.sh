@@ -16,7 +16,8 @@ int main() {
     assert(kThunderboltMixerSoftwareReturnCommand == 0xB4);
     assert(IsThunderboltSoftwareReturnSource(0));
     assert(IsThunderboltSoftwareReturnSource(7));
-    assert(!IsThunderboltSoftwareReturnSource(8));
+    assert(IsThunderboltSoftwareReturnSource(31));
+    assert(!IsThunderboltSoftwareReturnSource(32));
     assert(ThunderboltSoftwareReturnSlot(0, 0) == 64);
     assert(ThunderboltSoftwareReturnSlot(0, 1) == 65);
     assert(ThunderboltSoftwareReturnSlot(7, 0) == 78);

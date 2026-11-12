@@ -526,6 +526,75 @@ final class AppState {
         BoardTypeReading(card: secondaryBoardType, source: secondaryBoardSource)
     }
 
+    /// User-selected X-Symphony converter profile (AD-16X / DA-16X).
+    var legacyDeviceProfile: LegacyDeviceProfile = LegacyDeviceProfile(
+        rawValue: UserDefaults.standard.string(forKey: "legacyDeviceProfile") ?? "auto"
+    ) ?? .automatic {
+        didSet {
+            UserDefaults.standard.set(legacyDeviceProfile.rawValue, forKey: "legacyDeviceProfile")
+            Task { @MainActor in
+                await applyLegacyDeviceProfile()
+            }
+        }
+    }
+
+    /// Sidebar and diagnostics display name.
+    var activeDeviceTitle: String {
+        if legacyDeviceProfile.isLegacy16X {
+            return legacyDeviceProfile.shortTitle
+        }
+        return device?.identifier.displayName ?? "Symphony I/O"
+    }
+
+    /// Effective host input channel count.
+    var effectiveInputChannelCount: Int {
+        if legacyDeviceProfile.isLegacy16X {
+            return max(16, cardLayout.analogInputStripCount + cardLayout.digitalInputPairs.count * 2)
+        }
+        let base = device?.identifier.mode.channelCount ?? 16
+        return max(base, cardLayout.analogInputStripCount)
+    }
+
+    /// Effective host output channel count.
+    var effectiveOutputChannelCount: Int {
+        if legacyDeviceProfile.isLegacy16X {
+            return max(16, cardLayout.analogOutputStripCount + cardLayout.digitalOutputPairs.count * 2)
+        }
+        let base = device?.identifier.mode.channelCount ?? 16
+        return max(base, cardLayout.analogOutputStripCount)
+    }
+
+    /// Effective host channel count (scales to 48 or 64 when Port 1 + Port 2 are active).
+    var effectiveChannelCount: Int {
+        max(effectiveInputChannelCount, effectiveOutputChannelCount)
+    }
+
+    @MainActor
+    func applyLegacyDeviceProfile() async {
+        if let tb = device as? ThunderboltDeviceConnection {
+            tb.isXSymphonyMode = legacyDeviceProfile.isLegacy16X
+        }
+        if legacyDeviceProfile.isLegacy16X {
+            let slots = legacyDeviceProfile.boardSlots
+            primaryBoardType = slots.slot1
+            secondaryBoardType = slots.slot2
+            primaryBoardSource = .detected
+            secondaryBoardSource = .detected
+            if connectionMode == .hardware {
+                await syncOutputRoutingToHardware()
+                startMeterPolling()
+            }
+            viewReloadToken = UUID()
+        } else {
+            await readCardTypes()
+            if connectionMode == .hardware {
+                await syncOutputRoutingToHardware()
+                startMeterPolling()
+            }
+            viewReloadToken = UUID()
+        }
+    }
+
     /// Every user-facing channel count in the app, derived from the two slots.
     ///
     /// Views ask this and nothing else: strip counts, routing columns, mixer
@@ -536,12 +605,16 @@ final class AppState {
     /// `isKnown` is false only while slot 1 has told us nothing at all —
     /// a *detected* empty slot 2 is knowledge, and contributes nothing.
     var cardLayout: CardLayout {
-        CardLayout(
+        let extra = legacyDeviceProfile.boardSlots
+        return CardLayout(
             slot1: primaryBoardType,
             slot2: secondaryBoardType,
+            slot3: extra.slot3,
+            slot4: extra.slot4,
             isKnown: primaryBoardSource != .unknown || primaryBoardType != .none
                 || secondaryBoardSource != .unknown || secondaryBoardType != .none,
-            fallbackChannelCount: device?.identifier.mode.channelCount ?? 16)
+            fallbackChannelCount: device?.identifier.mode.channelCount ?? 16,
+            suppressDigitalChannels: legacyDeviceProfile.suppressDigitalChannels)
     }
 
     /// Changes whenever the installed cards change, so a view can rebuild its
@@ -549,7 +622,11 @@ final class AppState {
     /// `readCardTypes()` has answered, and `ForEach(0..<min(channels.count, n))`
     /// then pins the pre-detection count permanently.
     var cardLayoutToken: Int {
-        Int(primaryBoardType.rawValue) << 8 | Int(secondaryBoardType.rawValue)
+        let extra = legacyDeviceProfile.boardSlots
+        return Int(primaryBoardType.rawValue) << 24
+            | Int(secondaryBoardType.rawValue) << 16
+            | Int(extra.slot3.rawValue) << 8
+            | Int(extra.slot4.rawValue)
     }
 
     /// Load cached board types from UserDefaults (called at init, before USB reads).
@@ -958,6 +1035,12 @@ final class AppState {
             primaryBoardSource   = .simulated
             secondaryBoardSource = .simulated
             print("[Maestro] CARD SIMULATION: slot1=\(sim.slot1.productName) slot2=\(sim.slot2.productName)")
+        } else if legacyDeviceProfile.isLegacy16X {
+            let slots = legacyDeviceProfile.boardSlots
+            primaryBoardType   = slots.slot1
+            secondaryBoardType = slots.slot2
+            primaryBoardSource   = .detected
+            secondaryBoardSource = .detected
         } else {
             loadCachedBoardTypes()
         }
@@ -986,6 +1069,7 @@ final class AppState {
             if best.transportType == .thunderbolt {
                 // ── Thunderbolt path: standard CoreAudio properties → AudioDriverKit dext
                 let tbDevice = pref.tbConnection ?? ThunderboltDeviceConnection(identifier: identifier, audioDeviceID: audioDeviceID)
+                tbDevice.isXSymphonyMode = self.legacyDeviceProfile.isLegacy16X
                 self.device = tbDevice
                 self.connectionMode = .hardware
                 self.transportType = .thunderbolt
@@ -1100,7 +1184,21 @@ final class AppState {
     /// time between sequential EP0 vendor reads to different board slots.
     @MainActor
     func readCardTypes() async {
+        if legacyDeviceProfile.isLegacy16X {
+            if let tb = device as? ThunderboltDeviceConnection {
+                tb.isXSymphonyMode = true
+            }
+            let slots = legacyDeviceProfile.boardSlots
+            self.primaryBoardType = slots.slot1
+            self.secondaryBoardType = slots.slot2
+            self.primaryBoardSource = .detected
+            self.secondaryBoardSource = .detected
+            return
+        }
         guard let device = self.device else { return }
+        if let tb = device as? ThunderboltDeviceConnection {
+            tb.isXSymphonyMode = false
+        }
         // ThunderBridge's dext returns a validity bit alongside each raw
         // OptionBoardType value, so a valid raw zero means the slot was
         // measured empty. USB's proxy cannot make that distinction and keeps
@@ -1168,15 +1266,13 @@ final class AppState {
             print("[Maestro] syncOutputRouting: no cached routes, proxy defaults apply")
             return
         }
-        let board1 = self.primaryBoardType
-        let board2 = self.secondaryBoardType
-        let swPairs = (id.mode.channelCount) / 2
+        let columns = self.cardLayout.outputRoutingColumns
+        let swPairs = self.effectiveChannelCount / 2
         var written = 0
         for (row, cols) in routes.sorted(by: { $0.key < $1.key }) {
             for col in cols.sorted() {
-                guard let destByte = IOCardType.columnToRoutingByte(
-                    col: col, isInput: false, board1: board1, board2: board2
-                ) else { continue }
+                guard col >= 0, col < columns.count else { continue }
+                let destByte = columns[col].routingByte
                 let srcLeft: UInt8
                 if row < swPairs {
                     srcLeft = SymphonyIORoutingAddress.hostPlaybackBase(for: transportType ?? .usb) + UInt8(row * 2)
@@ -1344,6 +1440,7 @@ final class AppState {
 
                 if best.transportType == .thunderbolt {
                     let tbDevice = pref.tbConnection ?? ThunderboltDeviceConnection(identifier: identifier, audioDeviceID: audioDeviceID)
+                    tbDevice.isXSymphonyMode = self.legacyDeviceProfile.isLegacy16X
                     self.device = tbDevice
                     // Probe before declaring the endpoint ready. A powered-off
                     // Symphony can still be discoverable as a ThunderBridge
@@ -1489,12 +1586,18 @@ final class AppState {
         // The stream count reflects actual hardware routing channels (e.g. 32 for 4-stream device).
         // When using XPC path, meterDevice provides CoreAudio metering independently.
         let caDev = (device as? CoreAudioDeviceConnection) ?? meterDevice
-        let inChCount = (caDev?.inputMeterChannelCount ?? 0) > 0
-            ? caDev!.inputMeterChannelCount
-            : (device?.identifier.mode.channelCount ?? 16)
-        let outChCount = (caDev?.outputMeterChannelCount ?? 0) > 0
-            ? caDev!.outputMeterChannelCount
-            : (device?.identifier.mode.channelCount ?? 16)
+        let inChCount = max(
+            (caDev?.inputMeterChannelCount ?? 0) > 0
+                ? caDev!.inputMeterChannelCount
+                : (device?.identifier.mode.channelCount ?? 16),
+            cardLayout.analogInputStripCount
+        )
+        let outChCount = max(
+            (caDev?.outputMeterChannelCount ?? 0) > 0
+                ? caDev!.outputMeterChannelCount
+                : (device?.identifier.mode.channelCount ?? 16),
+            cardLayout.analogOutputStripCount
+        )
         if inputMeterLevels.count != inChCount {
             inputMeterLevels = Array(repeating: -60.0, count: inChCount)
         }
@@ -1834,11 +1937,30 @@ final class AppState {
                             return peak <= 0 ? -60 : max(-60, 20 * log10(peak / 256.0))
                         }
                         var inp = self.inputMeterLevels
-                        for i in 0..<inp.count { inp[i] = dbW(i) }            // inputs 0-31
+                        for i in 0..<inp.count { inp[i] = dbW(i) }            // inputs 0-63 (Port 1: 0-31, Port 2: 32-63)
                         var outp = self.outputMeterLevels
-                        for i in 0..<outp.count { outp[i] = dbW(64 + i) }     // host playback 64-95
+                        for i in 0..<outp.count { outp[i] = dbW(64 + i) }     // host playback 64-127 (Port 1: 64-95, Port 2: 96-127)
                         newInput = inp
                         newOutput = outp
+
+                        // Populate digital input/output meters on ThunderBridge
+                        let inB0 = MeterSlotMap.digitalWordIndices(
+                            analogOnBoard: self.primaryBoardType.analogInputChannels, boardIndex: 0)
+                        let inB1 = MeterSlotMap.digitalWordIndices(
+                            analogOnBoard: self.secondaryBoardType.analogInputChannels, boardIndex: 1)
+                        var rawDigIn = [Double](repeating: -60.0, count: 24)
+                        for (i, w) in inB0.enumerated() where i < 8 { rawDigIn[i] = dbW(w) }
+                        for (i, w) in inB1.enumerated() where i < 8 { rawDigIn[8 + i] = dbW(w) }
+                        self.digitalInputMeterLevels = self.smoothMeterLevels(self.digitalInputMeterLevels, raw: rawDigIn)
+
+                        let outB0 = MeterSlotMap.digitalWordIndices(
+                            analogOnBoard: self.primaryBoardType.analogOutputChannels, boardIndex: 0)
+                        let outB1 = MeterSlotMap.digitalWordIndices(
+                            analogOnBoard: self.secondaryBoardType.analogOutputChannels, boardIndex: 1)
+                        var rawDigOut = [Double](repeating: -60.0, count: 24)
+                        for (i, w) in outB0.enumerated() where i < 8 { rawDigOut[i] = dbW(64 + w) }
+                        for (i, w) in outB1.enumerated() where i < 8 { rawDigOut[8 + i] = dbW(64 + w) }
+                        self.digitalOutputMeterLevels = self.smoothMeterLevels(self.digitalOutputMeterLevels, raw: rawDigOut)
 
                         // If the FPGA input snapshot is unavailable or silent,
                         // use the active Core Audio capture stream. This keeps
@@ -2397,15 +2519,13 @@ final class AppState {
         let id = device.identifier
         let cache = RoutingStateCache(direction: "output", productID: id.productID)
         guard let routes = cache.loadMulti(), !routes.isEmpty else { return [:] }
-        let board1 = self.primaryBoardType
-        let board2 = self.secondaryBoardType
-        let swPairs = id.mode.channelCount / 2
+        let columns = self.cardLayout.outputRoutingColumns
+        let swPairs = self.effectiveChannelCount / 2
         var map: [UInt8: UInt8] = [:]
         for (row, cols) in routes {
             for col in cols {
-                guard let destByte = IOCardType.columnToRoutingByte(
-                    col: col, isInput: false, board1: board1, board2: board2
-                ) else { continue }
+                guard col >= 0, col < columns.count else { continue }
+                let destByte = columns[col].routingByte
                 let srcLeft: UInt8
                 if row < swPairs {
                     srcLeft = SymphonyIORoutingAddress.hostPlaybackBase(for: transportType ?? .usb) + UInt8(row * 2)

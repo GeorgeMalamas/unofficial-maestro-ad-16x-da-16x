@@ -68,9 +68,9 @@ struct InputRoutingView: View {
     @State private var isLoadingRoutes = true
     @State private var showLoadingIndicator = false
 
-    // Software input row count = USB audio class channels / 2 (stereo pairs).
+    // Software input row count = active host input channels / 2 (e.g. 16 pairs = 32ch, or 32 pairs = 64ch).
     private var pairCount: Int {
-        (appState.device?.identifier.mode.channelCount ?? 16) / 2
+        appState.effectiveInputChannelCount / 2
     }
 
     /// The installed cards' layout — the grid's hardware columns come from here.
@@ -479,19 +479,17 @@ struct OutputRoutingView: View {
         return columns.firstIndex { $0.routingByte == left }
     }
 
-    // Software output source row count = DAW playback channels / 2 (stereo pairs).
+    // Software output source row count = DAW playback channels / 2 (e.g. 24 pairs = 48ch, or 32 pairs = 64ch).
     private var swOutputPairCount: Int {
-        (appState.device?.identifier.mode.channelCount ?? 16) / 2
+        appState.effectiveOutputChannelCount / 2
     }
 
     // Output routing row labels: board-aware "A Line"/"A ADAT" + Mixer buses.
     // Evidence: original Maestro 2 shows "A Line 1/2", "A ADAT 1/2" etc.
     private var rowLabels: [(number: String, name: String)] {
         let total = swOutputPairCount
-        let board1 = appState.primaryBoardType
-        let board2 = appState.secondaryBoardType
-        // Count analog output pairs across both boards
-        let analogPairs = board1.analogOutputPairsForUI + board2.analogOutputPairsForUI
+        // Count analog output pairs across all active slots (Port 1 + Port 2)
+        let analogPairs = layout.analogOutputStripCount / 2
 
         var labels: [(number: String, name: String)] = []
         for i in 0..<total {
@@ -723,6 +721,16 @@ struct OutputRoutingView: View {
     /// board 1 ← playback 17-32, as XLink sources.
     private func defaultOutputRouteList(board1: IOCardType, board2: IOCardType) -> [SymphonyIODefaultRouting.Route] {
         let transport = appState.transportType ?? .usb
+        if appState.cardLayout.slots.count > 2 {
+            let playbackBase = SymphonyIORoutingAddress.hostPlaybackBase(for: transport)
+            var routes: [SymphonyIODefaultRouting.Route] = []
+            for (pairIndex, col) in columns.enumerated() {
+                let srcLeft = playbackBase &+ UInt8((pairIndex * 2) % max(1, appState.effectiveChannelCount))
+                routes.append((destination: col.routingByte, source: srcLeft))
+                routes.append((destination: col.routingByte &+ 1, source: srcLeft &+ 1))
+            }
+            return routes
+        }
         return SymphonyIODefaultRouting.outputRoutes(
             board0: .init(analog: board1.analogOutputChannels, digital: board1.digitalOutputChannels),
             board1: .init(analog: board2.analogOutputChannels, digital: board2.digitalOutputChannels),

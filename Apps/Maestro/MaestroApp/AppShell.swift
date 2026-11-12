@@ -339,7 +339,7 @@ struct SidebarView: View {
                         HStack {
                             Image(systemName: "hifispeaker")
                                 .foregroundStyle(.secondary)
-                            Text("Symphony I/O")
+                            Text(appState.activeDeviceTitle)
                                 .font(.headline)
                                 .lineLimit(1)
                                 .fixedSize()

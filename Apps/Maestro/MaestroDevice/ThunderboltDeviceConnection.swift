@@ -18,6 +18,20 @@ public final class ThunderboltDeviceConnection: DeviceConnection, @unchecked Sen
     /// DriverKit-local command handled by the card FPGA, not sent over XLink.
     private static let mixerSoftwareReturnSourceCommand: UInt8 = 0xB4
 
+    /// Commands handled locally by the ThunderBridge FPGA (low-latency mixer),
+    /// which work with X-Symphony cards (AD-16X / DA-16X) that lack a Symphony I/O MCU.
+    private static let fpgaLocalCommands: Set<UInt8> = [
+        0xB0, // mixerChannelLevel
+        0xB1, // mixerChannelPan
+        0xB2, // mixerChannelSolo
+        0xB3, // mixerChannelMute
+        0xB4, // mixerSoftwareReturnSourceCommand
+    ]
+
+    /// When true, suppresses Symphony I/O MCU XLink mailbox requests (0xA1, 0x31, 0x20, etc.)
+    /// that an X-Symphony card in an AD-16X or DA-16X does not implement.
+    public var isXSymphonyMode: Bool = false
+
     public let identifier: USBDeviceIdentifier
     public private(set) var isConnected: Bool = true
 
@@ -153,6 +167,9 @@ public final class ThunderboltDeviceConnection: DeviceConnection, @unchecked Sen
         case .opticalOutFormat:
             return try .uint32(readOpticalFormat(board: address.element))
         case .routing:
+            guard !isXSymphonyMode else {
+                throw DeviceConnectionError.unsupportedProperty(address.selector)
+            }
             let data = try dextClient.readVendorCommand(
                 command: SymphonyIOCommand.audioRouting.rawValue,
                 value: address.element,
@@ -261,9 +278,9 @@ public final class ThunderboltDeviceConnection: DeviceConnection, @unchecked Sen
         // (0xE4/0xE5). ThunderBridge's original PCIe mixer instead selects a
         // host-playback pair by changing the card FPGA mixer return route.
         if address.selector == .mixerSoftwareReturnID {
-            guard let source = value.asUInt32, source <= 7 else {
+            guard let source = value.asUInt32, source <= 31 else {
                 throw DeviceConnectionError.typeMismatch(
-                    expected: "UInt32 software return source 0...7", got: "\(value)")
+                    expected: "UInt32 software return source 0...31", got: "\(value)")
             }
             guard address.element & 0xFFFF == 0,
                   (1...2).contains(address.element >> 16) else {
@@ -339,6 +356,9 @@ public final class ThunderboltDeviceConnection: DeviceConnection, @unchecked Sen
     private func sendViaDext(_ request: USBControlRequest) throws {
         guard dextClient.isConnected else {
             throw DeviceConnectionError.notConnected
+        }
+        if isXSymphonyMode && !Self.fpgaLocalCommands.contains(request.bRequest) {
+            return
         }
         try dextClient.sendFromUSBRequest(request)
     }

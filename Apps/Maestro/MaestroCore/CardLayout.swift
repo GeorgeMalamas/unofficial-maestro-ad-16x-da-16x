@@ -32,6 +32,12 @@ public struct CardLayout: Sendable, Equatable {
     /// Secondary slot ("IOBoard 2", `0xA1` wIndex 1). The only slot an 8MicPre
     /// can occupy.
     public let slot2: IOCardType
+    /// Port 2 primary slot (XLink 2 Ch 33–48).
+    public let slot3: IOCardType
+    /// Port 2 secondary slot (XLink 2 Ch 49–64).
+    public let slot4: IOCardType
+    /// When true, suppresses digital/optical channels (for pure-analog AD-16X/DA-16X profiles).
+    public let suppressDigitalChannels: Bool
 
     /// Whether the board types come from an actual reading (detected, cached or
     /// simulated).
@@ -50,13 +56,19 @@ public struct CardLayout: Sendable, Equatable {
     public init(
         slot1: IOCardType = .none,
         slot2: IOCardType = .none,
+        slot3: IOCardType = .none,
+        slot4: IOCardType = .none,
         isKnown: Bool = true,
-        fallbackChannelCount: Int = 16
+        fallbackChannelCount: Int = 16,
+        suppressDigitalChannels: Bool = false
     ) {
         self.slot1 = slot1
         self.slot2 = slot2
+        self.slot3 = slot3
+        self.slot4 = slot4
         self.isKnown = isKnown
         self.fallbackChannelCount = fallbackChannelCount
+        self.suppressDigitalChannels = suppressDigitalChannels
     }
 
     /// Build a layout from a validated `CardConfiguration`.
@@ -77,17 +89,30 @@ public struct CardLayout: Sendable, Equatable {
     /// unscoped legacy key is used.
     public var savedStateScope: String? {
         guard isKnown else { return nil }
-        return "\(slot1.caseName)+\(slot2.caseName)"
+        if slot3 == .none && slot4 == .none {
+            return "\(slot1.caseName)+\(slot2.caseName)"
+        }
+        return "\(slot1.caseName)+\(slot2.caseName)+\(slot3.caseName)+\(slot4.caseName)"
     }
 
-    /// The two slots in order, so callers can iterate without repeating the pair.
-    public var slots: [IOCardType] { [slot1, slot2] }
+    /// Active slots in order (2 slots for single-port, 4 slots when Port 2 is populated).
+    public var slots: [IOCardType] {
+        (slot3 == .none && slot4 == .none) ? [slot1, slot2] : [slot1, slot2, slot3, slot4]
+    }
 
-    /// The card in `index` (0 = primary, 1 = secondary).
-    public func card(atSlot index: Int) -> IOCardType { index == 0 ? slot1 : slot2 }
+    /// The card in `index` (0 = Port 1 primary, 1 = Port 1 secondary, 2 = Port 2 primary, 3 = Port 2 secondary).
+    public func card(atSlot index: Int) -> IOCardType {
+        switch index {
+        case 0: return slot1
+        case 1: return slot2
+        case 2: return slot3
+        case 3: return slot4
+        default: return .none
+        }
+    }
 
     /// True when at least one module is installed (or nothing is known yet).
-    public var hasAnyCard: Bool { !isKnown || slot1 != .none || slot2 != .none }
+    public var hasAnyCard: Bool { !isKnown || slots.contains { $0 != .none } }
 
     // MARK: - Analog channel strips
 
@@ -95,25 +120,35 @@ public struct CardLayout: Sendable, Equatable {
     /// front of the *host* board's analog inputs and are already counted there.
     public var analogInputStripCount: Int {
         guard isKnown else { return fallbackChannelCount }
-        return slot1.analogInputChannels + slot2.analogInputChannels
+        return slots.reduce(0) { $0 + $1.analogInputChannels }
     }
 
     /// Analog OUTPUT strips to draw.
     public var analogOutputStripCount: Int {
         guard isKnown else { return fallbackChannelCount }
-        return slot1.analogOutputChannels + slot2.analogOutputChannels
+        return slots.reduce(0) { $0 + $1.analogOutputChannels }
     }
 
     /// The card that owns a 0-based analog input strip.
     public func cardForAnalogInputStrip(_ index: Int) -> IOCardType {
         guard isKnown else { return .none }
-        return index < slot1.analogInputChannels ? slot1 : slot2
+        var remaining = index
+        for card in slots {
+            if remaining < card.analogInputChannels { return card }
+            remaining -= card.analogInputChannels
+        }
+        return slots.last ?? .none
     }
 
     /// The card that owns a 0-based analog output strip.
     public func cardForAnalogOutputStrip(_ index: Int) -> IOCardType {
         guard isKnown else { return .none }
-        return index < slot1.analogOutputChannels ? slot1 : slot2
+        var remaining = index
+        for card in slots {
+            if remaining < card.analogOutputChannels { return card }
+            remaining -= card.analogOutputChannels
+        }
+        return slots.last ?? .none
     }
 
     // MARK: - Digital stereo pairs
@@ -144,7 +179,7 @@ public struct CardLayout: Sendable, Equatable {
         /// unmetered; returning `nil` is what keeps the view from reading the
         /// other board's meters — or running off the end of a 24-entry array.
         public var meterIndex: Int? {
-            guard pairOnBoard < CardLayout.meteredDigitalPairsPerBoard else { return nil }
+            guard boardIndex < 2, pairOnBoard < CardLayout.meteredDigitalPairsPerBoard else { return nil }
             return boardIndex * (CardLayout.meteredDigitalPairsPerBoard * 2) + pairOnBoard * 2
         }
     }
@@ -160,7 +195,7 @@ public struct CardLayout: Sendable, Equatable {
     public var digitalOutputPairs: [DigitalPair] { digitalPairs(isInput: false) }
 
     private func digitalPairs(isInput: Bool) -> [DigitalPair] {
-        guard isKnown else { return [] }
+        guard isKnown, !suppressDigitalChannels else { return [] }
         var pairs: [DigitalPair] = []
         // AES and ADAT are different plug types and each is numbered from 1
         // across the device, the way the daemon names its streams
@@ -194,6 +229,7 @@ public struct CardLayout: Sendable, Equatable {
     /// what used to hide S/PDIF Replace and S/PDIF Mirrors from a 16x16 owner —
     /// the only digital I/O that card has.
     public func hasSPDIF(slot index: Int) -> Bool {
+        if suppressDigitalChannels { return false }
         guard isKnown else { return true }
         return card(atSlot: index).hasSPDIFCoax
     }
@@ -336,7 +372,7 @@ public struct CardLayout: Sendable, Equatable {
                 analogChannel += 1
             }
         }
-        for (boardIndex, card) in slots.enumerated() {
+        for (boardIndex, card) in slots.enumerated() where !suppressDigitalChannels {
             for channelOnCard in 0..<card.digitalInputChannels {
                 let label = card.digitalLabel(forChannel: channelOnCard)
                 let number = digitalChannel[label, default: 1]
@@ -385,43 +421,43 @@ public struct CardLayout: Sendable, Equatable {
         ioBoard0Base: UInt8 = 32,
         ioBoard1Base: UInt8 = 48
     ) -> [RoutingColumn] {
-        let bases = [ioBoard0Base, ioBoard1Base]
+        let bases: [UInt8] = [ioBoard0Base, ioBoard1Base, ioBoard1Base &+ 16, ioBoard1Base &+ 32]
+        let slotCount = slots.count
 
-        // Per-board analog/digital pair counts. An unknown layout keeps the old
-        // "assume a full bus slice" guess so the grid is populated while the
-        // 0xA1 reads are in flight; a known-empty slot contributes nothing.
         func pairs(_ boardIndex: Int) -> (analog: Int, digital: Int) {
             let card = card(atSlot: boardIndex)
             guard isKnown else { return isInput ? (8, 0) : (0, 8) }
             guard card != .none else { return (0, 0) }
+            if suppressDigitalChannels {
+                return isInput
+                    ? (card.analogInputPairsForUI, 0)
+                    : (card.analogOutputPairsForUI, 0)
+            }
             return isInput
                 ? (card.analogInputPairsForUI, card.digitalInputPairsForUI)
                 : (card.analogOutputPairsForUI, card.digitalOutputPairsForUI)
         }
 
-        let board = [pairs(0), pairs(1)]
+        let board = (0..<slotCount).map { pairs($0) }
 
         var analogColumns: [RoutingColumn] = []
         var digitalColumns: [RoutingColumn] = []
         var analogChannel = 1
-        // AES and ADAT are separate plug types, each numbered from 1.
         var digitalChannel: [String: Int] = [:]
 
-        for boardIndex in 0..<2 {
+        for boardIndex in 0..<slotCount {
             for pair in 0..<board[boardIndex].analog {
                 analogColumns.append(RoutingColumn(
                     type: "Line",
                     channels: "\(analogChannel)/\(analogChannel + 1)",
                     boardIndex: boardIndex,
                     isDigital: false,
-                    routingByte: bases[boardIndex] + UInt8(pair * 2)))
+                    routingByte: bases[boardIndex] &+ UInt8(pair * 2)))
                 analogChannel += 2
             }
         }
-        for boardIndex in 0..<2 {
+        for boardIndex in 0..<slotCount {
             let card = card(atSlot: boardIndex)
-            // Digital channels sit after that board's analog channels inside its
-            // own 16-channel region.
             let digitalStart = board[boardIndex].analog * 2
             for pair in 0..<board[boardIndex].digital {
                 let label = card != .none ? card.digitalLabel(forPair: pair) : "ADAT"
@@ -431,13 +467,10 @@ public struct CardLayout: Sendable, Equatable {
                     channels: "\(number)/\(number + 1)",
                     boardIndex: boardIndex,
                     isDigital: true,
-                    routingByte: bases[boardIndex] + UInt8(digitalStart + pair * 2)))
+                    routingByte: bases[boardIndex] &+ UInt8(digitalStart + pair * 2)))
                 digitalChannel[label] = number + 2
             }
         }
-        // Column order is analog (both boards) then digital (both boards), which
-        // is the order the grid has always drawn and the order the routing-byte
-        // map assumes.
         return analogColumns + digitalColumns
     }
 

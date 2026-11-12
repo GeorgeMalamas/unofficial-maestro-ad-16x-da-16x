@@ -69,10 +69,10 @@ struct ThunderboltMixerState {
     bool swReturnMuted;
     bool masterMuted;
     bool swReturnSoloed;
-    uint8_t inputByte[32];
-    uint8_t inputPanByte[32];
-    bool inputMuted[32];
-    bool inputSoloed[32];
+    uint8_t inputByte[64];
+    uint8_t inputPanByte[64];
+    bool inputMuted[64];
+    bool inputSoloed[64];
 };
 
 struct SymphonyThunderbridge_IVars {
@@ -109,6 +109,22 @@ struct SymphonyThunderbridge_IVars {
     IOMemoryMap              *h2aDMAMap;         // CPU mapping of DMA playback buffer
     IOMemoryMap              *a2hStreamMap;      // CPU mapping of stream capture buffer
     IOMemoryMap              *h2aStreamMap;      // CPU mapping of stream playback buffer
+
+    // Port 2 DMA buffers and commands (Ch 33-64)
+    IOBufferMemoryDescriptor *a2h2Buffer;
+    IOBufferMemoryDescriptor *h2a2Buffer;
+    IODMACommand             *a2h2DMA;
+    IODMACommand             *h2a2DMA;
+    uint64_t                  a2h2PhysAddr;
+    uint64_t                  h2a2PhysAddr;
+
+    // Port 2 Stream buffers & mappings (Ch 33-64)
+    IOBufferMemoryDescriptor *a2h2StreamBuffer;
+    IOBufferMemoryDescriptor *h2a2StreamBuffer;
+    IOMemoryMap              *a2h2DMAMap;
+    IOMemoryMap              *h2a2DMAMap;
+    IOMemoryMap              *a2h2StreamMap;
+    IOMemoryMap              *h2a2StreamMap;
 
     // Meter DMA: the card FPGA continuously DMAs 256 meter words (peak in bits
     // [31:24], over in bit 1) into this bus-master buffer at ~10 Hz. CPU-mapped so
@@ -159,8 +175,10 @@ struct SymphonyThunderbridge_IVars {
     bool                       suspendedByProbe;   // the current suspend came from an unanswering endpoint, not from power-down
     // AudioDriverKit — CoreAudio device and streams (PT-07)
     IOUserAudioDevice *audioDevice;
-    IOUserAudioStream *inputStream;   // A2H (capture): FPGA → host
-    IOUserAudioStream *outputStream;  // H2A (playback): host → FPGA
+    IOUserAudioStream *inputStream;   // A2H (capture): FPGA → host (Port 1: Ch 1-32)
+    IOUserAudioStream *outputStream;  // H2A (playback): host → FPGA (Port 1: Ch 1-32)
+    IOUserAudioStream *inputStream2;  // Port 2 A2H (capture: Ch 33-64)
+    IOUserAudioStream *outputStream2; // Port 2 H2A (playback: Ch 33-64)
     bool               ioRunning;
     uint64_t           zeroTimestampSampleTime;
 
@@ -306,8 +324,8 @@ struct SymphonyThunderbridge_IVars {
     bool      wakeFoundEndpointAbsent; // atomic; SetPowerState(On) saw no endpoint (tunnel lost)
     // dext 115: shadow of the card output routing table the app wrote through
     // kThunderboltCardOutputRouteCommand, replayed by ReprogramCardAfterReset.
-    uint32_t  cardOutputRoute[32];
-    bool      cardOutputRouteSet[32];
+    uint32_t  cardOutputRoute[64];
+    bool      cardOutputRouteSet[64];
     // dext 116: whether the app has ever written mixer N's state (0xB0–0xB3).
     // Until it has, a re-init must write Start()'s unity defaults, not the
     // all-zero cached state (which silenced outputs 1-2 after wake, 12:18).
@@ -681,6 +699,34 @@ send:
     dev->MemoryWrite32(memIndex, kRegXLink1TX, val);
     if (cmd != kXLinkCmdMsgByte)
         dev->MemoryWrite32(memIndex, kRegXLink1TX, val);
+    return true;
+}
+
+static bool SendXLink2Command(IOPCIDevice *dev, uint8_t memIndex,
+                              uint8_t addr, uint8_t cmd, uint8_t data)
+{
+    for (int i = 0; i < 100; i++) {
+        uint32_t txReg = 0;
+        dev->MemoryRead32(memIndex, kRegXLink2TX, &txReg);
+        if (!(txReg & kXLinkCmdBusyBit))
+            goto send;
+        IOSleep(1);
+    }
+    return false;
+
+send:
+    uint32_t val = 0;
+    val <<= 6;
+    val |= (addr & 0x3F);
+    val <<= 8;
+    val |= cmd;
+    val <<= 8;
+    val |= data;
+    val <<= 1;
+    val &= 0xFFFFFE;
+    dev->MemoryWrite32(memIndex, kRegXLink2TX, val);
+    if (cmd != kXLinkCmdMsgByte)
+        dev->MemoryWrite32(memIndex, kRegXLink2TX, val);
     return true;
 }
 
@@ -1060,7 +1106,7 @@ static bool ChangeSampleRate(IOPCIDevice *dev, uint8_t memIndex, double newRate,
     // sample rate for the FPGA's TDM timing to align with the XLink data.
     SetDDSSampleRate(dev, memIndex, newRate);
 
-    // 1. Send SetSampleRate to all devices on the bus
+    // 1. Send SetSampleRate to all devices on Port 1 and Port 2
     if (!SendXLinkCommand(dev, memIndex, kXLinkCmdAddrAll,
                            kXLinkCmdSetSampleRate, rateCode)) {
         // TX-busy timeout: DDS is now at newRate but the XLink units were NOT told —
@@ -1068,6 +1114,8 @@ static bool ChangeSampleRate(IOPCIDevice *dev, uint8_t memIndex, double newRate,
         STERR("ChangeSampleRate: XLink SET_SAMPLE_RATE timeout (command NOT issued)");
         return false;
     }
+    (void)SendXLink2Command(dev, memIndex, kXLinkCmdAddrAll,
+                            kXLinkCmdSetSampleRate, rateCode);
     if (outCommandIssued) *outCommandIssued = true;   // XLink now at newRate
 
     // 2. WaitForLock — single lock pass (H3).
@@ -1266,10 +1314,12 @@ static bool ConfigureSymphonyLink(SymphonyThunderbridge_IVars *ivars, double rat
     //   5. Set sample rate + WaitForLock
     //   6. Unmute
 
-    // 12a. Clear status registers + reset
+    // 12a. Clear status registers + reset (Port 1 & Port 2)
     WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegXLink1Status, 0xFFFFFFFF);
     WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegXLink1TX, kXLinkResetCmd);
-    STLOG("XLink bus 1 reset");
+    WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegXLink2Status, 0xFFFFFFFF);
+    WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegXLink2TX, kXLinkResetCmd);
+    STLOG("XLink buses 1 & 2 reset");
 
     // ── 13. Set clock source to XLink1 ─────────────────────────────────
     // Legacy: XLink.cpp SetClockingSource() — FPGA derives clock from XLink 1.
@@ -1353,24 +1403,28 @@ static bool ConfigureSymphonyLink(SymphonyThunderbridge_IVars *ivars, double rat
     }
     STLOG("XLink: WaitForLock (pre-enum): %s", locked ? "LOCKED" : "TIMEOUT");
 
-    // ── 16. Enumerate: assign address, pass commands ──────────────────
-    // Legacy BusInit:601-654. Assign addr 1, enable pass-through.
+    // ── 16. Enumerate daisy-chained units on Port 1 & Port 2 ──────────
+    // Legacy BusInit:601-654. After ResetBus, PASS_COMMANDS is off on every
+    // X-Symphony card, so only the first un-enumerated unit in each daisy
+    // chain hears broadcast (addr=0) SET_ADDR. Loop devAddr = 1..8 on both
+    // Port 1 (e.g. 2x AD-16X + 2x DA-16X = 4 units) and Port 2 (e.g. 1x DA-16X)
+    // so every unit in the chain is assigned an address and opens PASS_COMMANDS
+    // to the next unit downstream.
+    for (uint8_t devAddr = 1; devAddr <= 8; devAddr++) {
+        SendXLinkCommand(ivars->pciDevice, ivars->barMemoryIndex,
+                         kXLinkCmdAddrAll, kXLinkCmdSetAddr, devAddr);
+        IOSleep(5);
+        SendXLinkCommand(ivars->pciDevice, ivars->barMemoryIndex,
+                         devAddr, kXLinkCmdPassCommands, 1);
 
-    if (!SendXLinkCommand(ivars->pciDevice, ivars->barMemoryIndex,
-                           kXLinkCmdAddrAll, kXLinkCmdSetAddr, 1)) {
-        STERR("XLink: SET_ADDR command timeout");
-    } else {
-        STLOG("XLink: SET_ADDR(1) sent — device assigned address 1");
+        SendXLink2Command(ivars->pciDevice, ivars->barMemoryIndex,
+                          kXLinkCmdAddrAll, kXLinkCmdSetAddr, devAddr);
+        IOSleep(5);
+        SendXLink2Command(ivars->pciDevice, ivars->barMemoryIndex,
+                          devAddr, kXLinkCmdPassCommands, 1);
+        IOSleep(5);
     }
-    IOSleep(10);
-
-    if (!SendXLinkCommand(ivars->pciDevice, ivars->barMemoryIndex,
-                           1, kXLinkCmdPassCommands, 1)) {
-        STERR("XLink: PASS_COMMANDS timeout");
-    } else {
-        STLOG("XLink: PASS_COMMANDS enabled on device 1");
-    }
-    IOSleep(10);
+    STLOG("XLink: Enumerated daisy-chained units (addrs 1..8) on Port 1 & Port 2");
 
     // ── 17. SetWCMaster (post-enumeration) ────────────────────────────
     // Legacy BusInit:672 — calls SetWCMaster again after enumeration.
@@ -1424,6 +1478,8 @@ static bool ConfigureSymphonyLink(SymphonyThunderbridge_IVars *ivars, double rat
     } else {
         STLOG("XLink: SET_SAMPLE_RATE(%u) sent", (uint32_t)(rate + 0.5));
     }
+    (void)SendXLink2Command(ivars->pciDevice, ivars->barMemoryIndex,
+                            kXLinkCmdAddrAll, kXLinkCmdSetSampleRate, rateCode);
 
     // WaitForLock after sample rate change
     IOSleep(100);
@@ -1461,6 +1517,8 @@ static bool ConfigureSymphonyLink(SymphonyThunderbridge_IVars *ivars, double rat
     } else {
         STLOG("XLink: UNMUTE sent (global unmute)");
     }
+    (void)SendXLink2Command(ivars->pciDevice, ivars->barMemoryIndex,
+                            kXLinkCmdAddrAll, kXLinkCmdUnmute, 0x80);
     IOSleep(50);
 
     // ── 19b. Configure Symphony IO speaker + routing ────────────────
@@ -1811,19 +1869,20 @@ static bool ConfigureSymphonyLink(SymphonyThunderbridge_IVars *ivars, double rat
 // Green pattern: 0xFFFFFF00 | brightness (all 24 bits on = solid)
 static void IndicateLinkOK(SymphonyThunderbridge_IVars *ivars)
 {
-    // Set GCSR LED bits: Port 1 on (green), Port 2 off.
-    // ThunderBridge GCSR LED mapping (Sym64Registers.h:153-163):
-    //   bit 11 (0x800) = Port 1 flash    bit 10 (0x400) = Port 1 off
-    //   bit  9 (0x200) = Port 2 flash    bit  8 (0x100) = Port 2 off
-    // "On" = neither flash nor off. "Off" = off bit set.
+    uint32_t xlinkClk = 0;
+    ReadRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegXLinkClocking, &xlinkClk);
+    const bool port2Active = (xlinkClk & kXLinkRX2ClockDetect) != 0;
+
+    // Set GCSR LED bits: Port 1 on (green), Port 2 on when Port 2 clock is present.
     {
-        uint32_t setBits = kGCSR_ClockOKSolid;  // 0x100 = Port 2 OFF
+        uint32_t setBits = port2Active ? 0 : kGCSR_ClockOKSolid;  // 0x100 = Port 2 OFF when inactive
         uint32_t clrBits = kGCSR_MasterLEDFlash  // 0x800 clear Port 1 flash
                          | kGCSR_MasterLEDSolid   // 0x400 clear Port 1 off
-                         | kGCSR_ClockOKFlash;     // 0x200 clear Port 2 flash
+                         | kGCSR_ClockOKFlash     // 0x200 clear Port 2 flash
+                         | (port2Active ? kGCSR_ClockOKSolid : 0);
         ModifyRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR,
                        setBits, clrBits);
-        STLOG("GCSR LED bits: Port 1 on, Port 2 off");
+        STLOG("GCSR LED bits: Port 1 on, Port 2 %s", port2Active ? "on" : "off");
     }
 
     if (!ivars->isLegacyPCIe2100 && ivars->hardwareVersion >= kThunderBridgeHWRevWithRGBLeds) {
@@ -1835,14 +1894,14 @@ static void IndicateLinkOK(SymphonyThunderbridge_IVars *ivars)
                       kRegPort0RedCtl, 0);
         WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
                       kRegPort0BlueCtl, 0);
-        // Port 2: off (not in use — legacy sets off when !m_fSecondPortInUse)
+        // Port 2: solid green if Port 2 unit detected, off otherwise
         WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
-                      kRegPort1GreenCtl, 0);
+                      kRegPort1GreenCtl, port2Active ? (0xFFFFFF00 | brightness) : 0);
         WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
                       kRegPort1RedCtl, 0);
         WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
                       kRegPort1BlueCtl, 0);
-        STLOG("LED: Port 1 solid green, Port 2 off (RGB)");
+        STLOG("LED: Port 1 solid green, Port 2 %s (RGB)", port2Active ? "solid green" : "off");
     }
 
 }
@@ -1954,10 +2013,10 @@ static void ReprogramCardAfterReset(SymphonyThunderbridge_IVars *ivars, uint32_t
     WriteRegister(dev, mi, kRegIntStatus, 0xFFFFFFFF);
     WriteRegister(dev, mi, kRegRxStatusErr, 0xFFFFFFFF);
     WriteRegister(dev, mi, kRegGCSR, kGCSR_SwapToLE);
-    ModifyRegister(dev, mi, kRegXLinkClocking, kXLinkClockEnable1, 0);
-    // Routing tables: the app's card output routes where known, Start()'s
-    // defaults elsewhere; input routing is always the default.
-    for (uint32_t n = 0; n < kMaxChannelsPerPort; n++) {
+    ModifyRegister(dev, mi, kRegXLinkClocking, kXLinkClockEnable1 | kXLinkClockEnable2, 0);
+    ModifyRegister(dev, mi, kRegGCSR2, 0, kGCSR2_DisablePort1 | kGCSR2_DisablePort2);
+    // Routing tables: all 64 channels across Port 1 (0..31) and Port 2 (32..63).
+    for (uint32_t n = 0; n < kOutputRoutingChannels; n++) {
         const uint32_t def = ((n < 2) ? (kTDM_Mixer0Out + n) : (kTDM_PCIOut0 + n)) | kRoutingEnable;
         WriteRegister(dev, mi, kRegOutputRouting + n * 4,
                       ivars->cardOutputRouteSet[n] ? ivars->cardOutputRoute[n] : def);
@@ -1968,17 +2027,17 @@ static void ReprogramCardAfterReset(SymphonyThunderbridge_IVars *ivars, uint32_t
         WriteRegister(dev, mi, kRegMeterTimer, kMeterTimerValue);
         WriteRegister(dev, mi, kRegMeterHBA, (uint32_t)ivars->meterPhysAddr);
     }
-    // Audio DMA registers (buffers retained).
+    // Audio DMA registers (Port 1 & Port 2 buffers retained).
     {
         const uint32_t bufSizeWords = (uint32_t)(kDMABufferSize / (kAudioBitDepth / 8));
         WriteRegister(dev, mi, kRegA2HBUFSIZE, bufSizeWords);
         WriteRegister(dev, mi, kRegH2ABUFSIZE, bufSizeWords);
         WriteRegister(dev, mi, kRegA2HHBA, (uint32_t)ivars->a2hPhysAddr);
         WriteRegister(dev, mi, kRegH2AHBA, (uint32_t)ivars->h2aPhysAddr);
-        WriteRegister(dev, mi, kRegA2H2BUFSIZE, 0);
-        WriteRegister(dev, mi, kRegH2A2BUFSIZE, 0);
-        WriteRegister(dev, mi, kRegA2H2HBA, 0);
-        WriteRegister(dev, mi, kRegH2A2HBA, 0);
+        WriteRegister(dev, mi, kRegA2H2BUFSIZE, bufSizeWords);
+        WriteRegister(dev, mi, kRegH2A2BUFSIZE, bufSizeWords);
+        WriteRegister(dev, mi, kRegA2H2HBA, (uint32_t)ivars->a2h2PhysAddr);
+        WriteRegister(dev, mi, kRegH2A2HBA, (uint32_t)ivars->h2a2PhysAddr);
     }
     // Channel count and the frame size for the rate the units run at.
     ModifyRegister(dev, mi, kRegGCSR, kGCSR_DMAOutSize32 | kGCSR_DMAInSize32, kGCSR_DMAMask);
@@ -2035,6 +2094,14 @@ static void ReprogramCardAfterReset(SymphonyThunderbridge_IVars *ivars, uint32_t
         gcsr |= kGCSR_A2HDMAEnable | kGCSR_H2ADMAEnable;
         if (ivars->meterDMAActive) gcsr |= kGCSR_MeterDMAEnable;
         WriteRegister(dev, mi, kRegGCSR, gcsr);
+
+        uint32_t gcsr2 = (kGCSR2_DMAOutSize32 | kGCSR2_DMAInSize32);
+        WriteRegister(dev, mi, kRegGCSR2, gcsr2);
+        gcsr2 |= (kGCSR2_A2HTrigSelect | kGCSR2_H2ATrigSelect);
+        WriteRegister(dev, mi, kRegGCSR2, gcsr2);
+        gcsr2 |= (kGCSR2_A2HDMAEnable | kGCSR2_H2ADMAEnable);
+        WriteRegister(dev, mi, kRegGCSR2, gcsr2);
+
         ivars->dmaRunning = true;
         IOSleep(10);
         ModifyRegister(dev, mi, kRegClkCtrl,
@@ -2687,8 +2754,8 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
     // This allows the ThunderBridge to detect Symphony IO on PC-32.
 
     ModifyRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegXLinkClocking,
-                   kXLinkClockEnable1, 0);
-    STLOG("XLink port 1 enabled (XLINK_CLOCKING_ENABLE_1)");
+                   kXLinkClockEnable1 | kXLinkClockEnable2, 0);
+    STLOG("XLink ports 1 & 2 enabled (XLINK_CLOCKING_ENABLE_1 | ENABLE_2)");
 
     SymphonyLinkInitResult linkInit = {};
     ivars->symphonyLinkConfigured = ConfigureSymphonyLink(ivars, 44100.0, &linkInit);
@@ -2745,32 +2812,23 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
     // This is the critical step — without it, DMA playback data never
     // reaches the XLink bus (and thus never reaches the Symphony IO DACs).
 
-    for (uint32_t n = 0; n < kMaxChannelsPerPort; n++) {
-        // Main stereo ch0/1 come from the card Mixer 0 output (TDM slots 128/129)
-        // so the app's mixer (SW-return fader/mute/master) affects the speakers.
-        // ch2-31 stay direct PCI_OUT (host playback straight to XLink TX). The mixer
-        // is set up + fed host playback below (step 21d-2); at unity it passes audio
-        // unchanged. Evidence: original Sym64Routing.cpp:249-254 routes MIXER0..3_OUT
-        // to outputs; SymphonyPCIeRoutingController.cpp:1164 (ThunderBridge=Sym64 default).
+    for (uint32_t n = 0; n < kOutputRoutingChannels; n++) {
         uint32_t src = (n < 2) ? (kTDM_Mixer0Out + n) : (kTDM_PCIOut0 + n);
         WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
                       kRegOutputRouting + n * 4,
                       src | kRoutingEnable);
     }
     STLOG("Output routing: ch0/1 ← Mixer0/1 out (128/129), ch2-%u ← PCI_OUT (enabled)",
-          kMaxChannelsPerPort - 1);
+          kOutputRoutingChannels - 1);
 
-    // ── 21c. Input routing: map XLink RX inputs → A2H DMA channels ────────
-    // Legacy: Sym64Routing::init() — 1:1 mapping of XLink RX to PCI input.
-    // Needed for capture (recording from Symphony IO ADCs).
-
-    for (uint32_t n = 0; n < kMaxChannelsPerPort; n++) {
+    // ── 21c. Input routing: map XLink RX inputs → A2H DMA channels (64ch) ──
+    for (uint32_t n = 0; n < kInputRoutingChannels; n++) {
         WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
                       kRegInputRouting + n * 4,
                       (kTDM_XLinkRX0 + n) | kRoutingEnable);
     }
     STLOG("Input routing: %u channels mapped (XLink RX → PCI_IN, enabled)",
-          kMaxChannelsPerPort);
+          kInputRoutingChannels);
 
     // ── 21d. Clear mixer coefficients ─────────────────────────────────────
     // Legacy: Mixer::init() — zero all coefficients, select table LOW.
@@ -2834,8 +2892,8 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
     // Legacy: setCardEnabled() clears DisablePort1. Bit may be stale.
 
     ModifyRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR2,
-                   0, kGCSR2_DisablePort1);
-    STLOG("GCSR2: Port 1 enabled (DisablePort1 cleared)");
+                   0, kGCSR2_DisablePort1 | kGCSR2_DisablePort2);
+    STLOG("GCSR2: Ports 1 & 2 enabled (DisablePort1 | DisablePort2 cleared)");
 
     // NOTE: ClkCtrl unmute moved to AFTER DMA start (step 29b).
     // Legacy: performAudioEngineStart() unmutes AFTER StartDMA() + 10ms delay.
@@ -2976,7 +3034,70 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
         goto start_failure;
     }
 
-    STLOG("DMA: Stream buffers allocated, DMA buffers mapped CACHE-INHIBIT, stream buffers mapped default");
+    // Allocate Port 2 DMA buffers & stream buffers (Ch 33-64)
+    ret = AllocateDMABuffer(this, ivars->pciDevice, kDMABufferSize,
+                            kIOMemoryDirectionInOut,
+                            &ivars->a2h2Buffer, &ivars->a2h2DMA,
+                            &ivars->a2h2PhysAddr);
+    if (ret != kIOReturnSuccess) {
+        STERR("DMA: Port 2 A2H buffer allocation failed: 0x%x", ret);
+        goto start_failure;
+    }
+
+    ret = AllocateDMABuffer(this, ivars->pciDevice, kDMABufferSize,
+                            kIOMemoryDirectionInOut,
+                            &ivars->h2a2Buffer, &ivars->h2a2DMA,
+                            &ivars->h2a2PhysAddr);
+    if (ret != kIOReturnSuccess) {
+        STERR("DMA: Port 2 H2A buffer allocation failed: 0x%x", ret);
+        goto start_failure;
+    }
+
+    ivars->a2h2DMA->PerformOperation(
+        kIODMACommandPerformOperationOptionZero, 0, kDMABufferSize, 0, nullptr);
+    ivars->h2a2DMA->PerformOperation(
+        kIODMACommandPerformOperationOptionZero, 0, kDMABufferSize, 0, nullptr);
+
+    ret = IOBufferMemoryDescriptor::Create(
+        kIOMemoryDirectionInOut, kDMABufferSize, 0, &ivars->a2h2StreamBuffer);
+    if (ret != kIOReturnSuccess || !ivars->a2h2StreamBuffer) {
+        STERR("DMA: Port 2 A2H stream buffer alloc failed: 0x%x", ret);
+        goto start_failure;
+    }
+    ivars->a2h2StreamBuffer->SetLength(kDMABufferSize);
+
+    ret = IOBufferMemoryDescriptor::Create(
+        kIOMemoryDirectionInOut, kDMABufferSize, 0, &ivars->h2a2StreamBuffer);
+    if (ret != kIOReturnSuccess || !ivars->h2a2StreamBuffer) {
+        STERR("DMA: Port 2 H2A stream buffer alloc failed: 0x%x", ret);
+        goto start_failure;
+    }
+    ivars->h2a2StreamBuffer->SetLength(kDMABufferSize);
+
+    ret = ivars->a2h2Buffer->CreateMapping(
+        kIOMemoryMapCacheModeInhibit, 0, 0, 0, 0, &ivars->a2h2DMAMap);
+    if (ret != kIOReturnSuccess) {
+        STERR("DMA: Port 2 A2H DMA buffer map failed: 0x%x", ret);
+        goto start_failure;
+    }
+    ret = ivars->h2a2Buffer->CreateMapping(
+        kIOMemoryMapCacheModeInhibit, 0, 0, 0, 0, &ivars->h2a2DMAMap);
+    if (ret != kIOReturnSuccess) {
+        STERR("DMA: Port 2 H2A DMA buffer map failed: 0x%x", ret);
+        goto start_failure;
+    }
+    ret = ivars->a2h2StreamBuffer->CreateMapping(0, 0, 0, 0, 0, &ivars->a2h2StreamMap);
+    if (ret != kIOReturnSuccess) {
+        STERR("DMA: Port 2 A2H stream buffer map failed: 0x%x", ret);
+        goto start_failure;
+    }
+    ret = ivars->h2a2StreamBuffer->CreateMapping(0, 0, 0, 0, 0, &ivars->h2a2StreamMap);
+    if (ret != kIOReturnSuccess) {
+        STERR("DMA: Port 2 H2A stream buffer map failed: 0x%x", ret);
+        goto start_failure;
+    }
+
+    STLOG("DMA: Port 1 & Port 2 stream/DMA buffers allocated and mapped");
 
     // ── 24m. Meter DMA buffer (card FPGA continuously DMAs 256 meter words) ──
     // Allocate a 1 KB bus-master buffer (InOut, like A2H so CreateMapping + CPU reads
@@ -3053,11 +3174,15 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
         WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
                       kRegH2AHBA, (uint32_t)ivars->h2aPhysAddr);
 
-        // Port 2 — disabled (no second port in use)
-        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegA2H2BUFSIZE, 0);
-        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegH2A2BUFSIZE, 0);
-        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegA2H2HBA, 0);
-        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegH2A2HBA, 0);
+        // Port 2 buffer sizes and base addresses (Ch 33-64)
+        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
+                      kRegA2H2BUFSIZE, bufSizeWords);
+        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
+                      kRegH2A2BUFSIZE, bufSizeWords);
+        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
+                      kRegA2H2HBA, (uint32_t)ivars->a2h2PhysAddr);
+        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex,
+                      kRegH2A2HBA, (uint32_t)ivars->h2a2PhysAddr);
 
         // Verify readback
         uint32_t verifyA2H = 0, verifyH2A = 0, verifyBufSz = 0;
@@ -3255,6 +3380,14 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
         if (ivars->meterDMAActive)
             gcsr |= kGCSR_MeterDMAEnable;
         WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR, gcsr);
+
+        // Start Port 2 DMA (kRegGCSR2) with the same rising-edge sequence
+        uint32_t gcsr2 = (kGCSR2_DMAOutSize32 | kGCSR2_DMAInSize32);
+        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR2, gcsr2);
+        gcsr2 |= (kGCSR2_A2HTrigSelect | kGCSR2_H2ATrigSelect);
+        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR2, gcsr2);
+        gcsr2 |= (kGCSR2_A2HDMAEnable | kGCSR2_H2ADMAEnable);
+        WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR2, gcsr2);
 
         ivars->dmaRunning = true;
         STLOG("DMA: Started (A2H + H2A%s). GCSR=0x%08x",
@@ -3517,7 +3650,50 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
             goto start_failure;
         }
 
-        STLOG("Audio: Streams added to device");
+        // Create and add Port 2 input & output streams (Ch 33-64)
+        auto inStream2 = IOUserAudioStream::Create(
+            this,
+            IOUserAudioStreamDirection::Input,
+            ivars->a2h2StreamBuffer);
+        if (!inStream2) {
+            STERR("Audio: Failed to create Port 2 input stream");
+            goto start_failure;
+        }
+        ivars->inputStream2 = inStream2.get();
+        ivars->inputStream2->retain();
+        ivars->inputStream2->SetAvailableStreamFormats(formats, 6);
+        ivars->inputStream2->SetCurrentStreamFormat(&formats[0]);
+        ivars->inputStream2->SetTerminalType(IOUserAudioStreamTerminalType::Line);
+        ivars->inputStream2->SetStartingChannel(33);
+
+        auto outStream2 = IOUserAudioStream::Create(
+            this,
+            IOUserAudioStreamDirection::Output,
+            ivars->h2a2StreamBuffer);
+        if (!outStream2) {
+            STERR("Audio: Failed to create Port 2 output stream");
+            goto start_failure;
+        }
+        ivars->outputStream2 = outStream2.get();
+        ivars->outputStream2->retain();
+        ivars->outputStream2->SetAvailableStreamFormats(formats, 6);
+        ivars->outputStream2->SetCurrentStreamFormat(&formats[0]);
+        ivars->outputStream2->SetTerminalType(IOUserAudioStreamTerminalType::Line);
+        ivars->outputStream2->SetStartingChannel(33);
+
+        ret = ivars->audioDevice->AddStream(ivars->inputStream2);
+        if (ret != kIOReturnSuccess) {
+            STERR("Audio: AddStream(inputStream2) failed: 0x%x", ret);
+            goto start_failure;
+        }
+
+        ret = ivars->audioDevice->AddStream(ivars->outputStream2);
+        if (ret != kIOReturnSuccess) {
+            STERR("Audio: AddStream(outputStream2) failed: 0x%x", ret);
+            goto start_failure;
+        }
+
+        STLOG("Audio: Port 1 & Port 2 streams added to device (64ch in / 64ch out)");
 
         // ── 36b. Add volume and mute controls ────────────────────────────
         // Enables macOS volume HUD (volume keys + slider). Without these,
@@ -3590,7 +3766,7 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
                 state.masterMuted = false;
                 state.swReturnSoloed = false;
                 ivars->mixerSwReturnSource[mixer] = 0;
-                for (int c = 0; c < 32; c++) {
+                for (int c = 0; c < 64; c++) {
                     state.inputByte[c] = 48;      // 0 dB when unmuted
                     state.inputPanByte[c] = 64;   // center
                     state.inputMuted[c] = true;   // inputs start muted
@@ -3842,10 +4018,14 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
 
         {
             // Pre-compute mapped addresses for use in the real-time block
-            uint8_t *a2hDMABase    = (uint8_t *)ivars->a2hDMAMap->GetAddress();
-            uint8_t *h2aDMABase    = (uint8_t *)ivars->h2aDMAMap->GetAddress();
-            uint8_t *a2hStreamBase = (uint8_t *)ivars->a2hStreamMap->GetAddress();
-            uint8_t *h2aStreamBase = (uint8_t *)ivars->h2aStreamMap->GetAddress();
+            uint8_t *a2hDMABase     = (uint8_t *)ivars->a2hDMAMap->GetAddress();
+            uint8_t *h2aDMABase     = (uint8_t *)ivars->h2aDMAMap->GetAddress();
+            uint8_t *a2hStreamBase  = (uint8_t *)ivars->a2hStreamMap->GetAddress();
+            uint8_t *h2aStreamBase  = (uint8_t *)ivars->h2aStreamMap->GetAddress();
+            uint8_t *a2h2DMABase    = (uint8_t *)ivars->a2h2DMAMap->GetAddress();
+            uint8_t *h2a2DMABase    = (uint8_t *)ivars->h2a2DMAMap->GetAddress();
+            uint8_t *a2h2StreamBase = (uint8_t *)ivars->a2h2StreamMap->GetAddress();
+            uint8_t *h2a2StreamBase = (uint8_t *)ivars->h2a2StreamMap->GetAddress();
 
             STLOG("IOOpHandler: DMA maps: a2h=%p h2a=%p, Stream maps: a2h=%p h2a=%p",
                   (void *)a2hDMABase, (void *)h2aDMABase,
@@ -3869,35 +4049,28 @@ kern_return_t IMPL(SymphonyThunderbridge, Start)
                     if (byteCount > kRingBytes) byteCount = kRingBytes;
 
                     if (in_io_operation == IOUserAudioIOOperationWriteEnd) {
-                        // Playback: CoreAudio wrote to stream buffer → copy to DMA buffer
-                        // Handle ring buffer wrap-around
+                        // Playback: CoreAudio wrote to stream buffers → copy to Port 1 & Port 2 DMA buffers
                         if (byteOffset + byteCount <= kRingBytes) {
-                            memcpy(h2aDMABase + byteOffset,
-                                   h2aStreamBase + byteOffset,
-                                   byteCount);
+                            memcpy(h2aDMABase  + byteOffset, h2aStreamBase  + byteOffset, byteCount);
+                            memcpy(h2a2DMABase + byteOffset, h2a2StreamBase + byteOffset, byteCount);
                         } else {
                             uint32_t firstPart = kRingBytes - byteOffset;
-                            memcpy(h2aDMABase + byteOffset,
-                                   h2aStreamBase + byteOffset,
-                                   firstPart);
-                            memcpy(h2aDMABase,
-                                   h2aStreamBase,
-                                   byteCount - firstPart);
+                            memcpy(h2aDMABase  + byteOffset, h2aStreamBase  + byteOffset, firstPart);
+                            memcpy(h2aDMABase,               h2aStreamBase,               byteCount - firstPart);
+                            memcpy(h2a2DMABase + byteOffset, h2a2StreamBase + byteOffset, firstPart);
+                            memcpy(h2a2DMABase,              h2a2StreamBase,              byteCount - firstPart);
                         }
                     } else if (in_io_operation == IOUserAudioIOOperationBeginRead) {
-                        // Capture: copy DMA buffer → stream buffer before CoreAudio reads
+                        // Capture: copy Port 1 & Port 2 DMA buffers → stream buffers before CoreAudio reads
                         if (byteOffset + byteCount <= kRingBytes) {
-                            memcpy(a2hStreamBase + byteOffset,
-                                   a2hDMABase + byteOffset,
-                                   byteCount);
+                            memcpy(a2hStreamBase  + byteOffset, a2hDMABase  + byteOffset, byteCount);
+                            memcpy(a2h2StreamBase + byteOffset, a2h2DMABase + byteOffset, byteCount);
                         } else {
                             uint32_t firstPart = kRingBytes - byteOffset;
-                            memcpy(a2hStreamBase + byteOffset,
-                                   a2hDMABase + byteOffset,
-                                   firstPart);
-                            memcpy(a2hStreamBase,
-                                   a2hDMABase,
-                                   byteCount - firstPart);
+                            memcpy(a2hStreamBase  + byteOffset, a2hDMABase  + byteOffset, firstPart);
+                            memcpy(a2hStreamBase,               a2hDMABase,               byteCount - firstPart);
+                            memcpy(a2h2StreamBase + byteOffset, a2h2DMABase + byteOffset, firstPart);
+                            memcpy(a2h2StreamBase,              a2h2DMABase,              byteCount - firstPart);
                         }
                     }
 
@@ -4443,6 +4616,8 @@ kern_return_t SymphonyThunderbridge::StartDevice(
                                kGCSR_A2HTrigSelect | kGCSR_H2ATrigSelect |
                                kGCSR_MeterDMAEnable | kGCSR_MeterTrigSelect);
                     WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR, gcsr);
+                    WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR2,
+                                  kGCSR2_DMAOutSize32 | kGCSR2_DMAInSize32);
                     STLOG("StartDevice: DMA stopped for rate change (GCSR=0x%08x)", gcsr);
                 }
                 IOSleep(10);  // Let last DMA transfer complete
@@ -4567,6 +4742,14 @@ kern_return_t SymphonyThunderbridge::StartDevice(
                     gcsr |= kGCSR_A2HDMAEnable | kGCSR_H2ADMAEnable;
                     if (ivars->meterDMAActive) gcsr |= kGCSR_MeterDMAEnable;
                     WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR, gcsr);
+
+                    uint32_t gcsr2 = (kGCSR2_DMAOutSize32 | kGCSR2_DMAInSize32);
+                    WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR2, gcsr2);
+                    gcsr2 |= (kGCSR2_A2HTrigSelect | kGCSR2_H2ATrigSelect);
+                    WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR2, gcsr2);
+                    gcsr2 |= (kGCSR2_A2HDMAEnable | kGCSR2_H2ADMAEnable);
+                    WriteRegister(ivars->pciDevice, ivars->barMemoryIndex, kRegGCSR2, gcsr2);
+
                     STLOG("StartDevice: DMA restarted (GCSR=0x%08x%s)", gcsr,
                           ivars->meterDMAActive ? " +Meters" : "");
                 }
@@ -4716,6 +4899,14 @@ kern_return_t IMPL(SymphonyThunderbridge, Stop)
             ivars->h2aDMA->PerformOperation(
                 kIODMACommandPerformOperationOptionZero, 0, kDMABufferSize, 0, nullptr);
         }
+        if (ivars->a2h2DMA) {
+            ivars->a2h2DMA->PerformOperation(
+                kIODMACommandPerformOperationOptionZero, 0, kDMABufferSize, 0, nullptr);
+        }
+        if (ivars->h2a2DMA) {
+            ivars->h2a2DMA->PerformOperation(
+                kIODMACommandPerformOperationOptionZero, 0, kDMABufferSize, 0, nullptr);
+        }
 
         // ── 4. Wait for FPGA to DMA the zeroed/muted data (legacy: IOSleep(100))
         IOSleep(100);
@@ -4766,8 +4957,10 @@ kern_return_t IMPL(SymphonyThunderbridge, Stop)
                 //    Remove children from the device first, then RemoveObject(device) (inverse of
                 //    Start's add order), while audioDevice is still valid.
                 if (iv->audioDevice) {
-                    if (iv->inputStream)  iv->audioDevice->RemoveStream(iv->inputStream);
-                    if (iv->outputStream) iv->audioDevice->RemoveStream(iv->outputStream);
+                    if (iv->inputStream)   iv->audioDevice->RemoveStream(iv->inputStream);
+                    if (iv->outputStream)  iv->audioDevice->RemoveStream(iv->outputStream);
+                    if (iv->inputStream2)  iv->audioDevice->RemoveStream(iv->inputStream2);
+                    if (iv->outputStream2) iv->audioDevice->RemoveStream(iv->outputStream2);
                     if (iv->outputVolumeControl) iv->audioDevice->RemoveControl(iv->outputVolumeControl);
                     if (iv->outputMuteControl)   iv->audioDevice->RemoveControl(iv->outputMuteControl);
                     if (iv->clockSourceControl)  iv->audioDevice->RemoveControl(iv->clockSourceControl);
@@ -4796,6 +4989,8 @@ kern_return_t IMPL(SymphonyThunderbridge, Stop)
                 }
                 OSSafeReleaseNULL(iv->inputStream);
                 OSSafeReleaseNULL(iv->outputStream);
+                OSSafeReleaseNULL(iv->inputStream2);
+                OSSafeReleaseNULL(iv->outputStream2);
                 OSSafeReleaseNULL(iv->audioDevice);
 
                 // ── 10. Drain the serial XLink queue BEFORE releasing DMA mappings
@@ -4835,6 +5030,14 @@ kern_return_t IMPL(SymphonyThunderbridge, Stop)
                     iv->h2aDMA->CompleteDMA(kIODMACommandCompleteDMANoOptions);
                     OSSafeReleaseNULL(iv->h2aDMA);
                 }
+                if (iv->a2h2DMA) {
+                    iv->a2h2DMA->CompleteDMA(kIODMACommandCompleteDMANoOptions);
+                    OSSafeReleaseNULL(iv->a2h2DMA);
+                }
+                if (iv->h2a2DMA) {
+                    iv->h2a2DMA->CompleteDMA(kIODMACommandCompleteDMANoOptions);
+                    OSSafeReleaseNULL(iv->h2a2DMA);
+                }
                 // Meter DMA: the FPGA writes this buffer every ~100 ms. Stop reads and
                 // free it here (GCSR meter bits already cleared above) so the device can
                 // never write freed memory / DART-fault.
@@ -4854,6 +5057,14 @@ kern_return_t IMPL(SymphonyThunderbridge, Stop)
                 OSSafeReleaseNULL(iv->h2aStreamBuffer);
                 OSSafeReleaseNULL(iv->a2hBuffer);
                 OSSafeReleaseNULL(iv->h2aBuffer);
+                OSSafeReleaseNULL(iv->a2h2DMAMap);
+                OSSafeReleaseNULL(iv->h2a2DMAMap);
+                OSSafeReleaseNULL(iv->a2h2StreamMap);
+                OSSafeReleaseNULL(iv->h2a2StreamMap);
+                OSSafeReleaseNULL(iv->a2h2StreamBuffer);
+                OSSafeReleaseNULL(iv->h2a2StreamBuffer);
+                OSSafeReleaseNULL(iv->a2h2Buffer);
+                OSSafeReleaseNULL(iv->h2a2Buffer);
                 OSSafeReleaseNULL(iv->meterMap);
                 OSSafeReleaseNULL(iv->meterBuffer);
 
@@ -4880,8 +5091,10 @@ kern_return_t IMPL(SymphonyThunderbridge, Stop)
         if (ivars->audioDevice) {
             // Phase 7: symmetric teardown — every Add* balanced by its Remove* (see cancel-handler
             // path above). Missing Remove* leaves a child alive that retains the driver → orphan.
-            if (ivars->inputStream)  ivars->audioDevice->RemoveStream(ivars->inputStream);
-            if (ivars->outputStream) ivars->audioDevice->RemoveStream(ivars->outputStream);
+            if (ivars->inputStream)   ivars->audioDevice->RemoveStream(ivars->inputStream);
+            if (ivars->outputStream)  ivars->audioDevice->RemoveStream(ivars->outputStream);
+            if (ivars->inputStream2)  ivars->audioDevice->RemoveStream(ivars->inputStream2);
+            if (ivars->outputStream2) ivars->audioDevice->RemoveStream(ivars->outputStream2);
             if (ivars->outputVolumeControl) ivars->audioDevice->RemoveControl(ivars->outputVolumeControl);
             if (ivars->outputMuteControl)   ivars->audioDevice->RemoveControl(ivars->outputMuteControl);
             if (ivars->clockSourceControl)  ivars->audioDevice->RemoveControl(ivars->clockSourceControl);
@@ -4910,6 +5123,8 @@ kern_return_t IMPL(SymphonyThunderbridge, Stop)
         }
         OSSafeReleaseNULL(ivars->inputStream);
         OSSafeReleaseNULL(ivars->outputStream);
+        OSSafeReleaseNULL(ivars->inputStream2);
+        OSSafeReleaseNULL(ivars->outputStream2);
         OSSafeReleaseNULL(ivars->audioDevice);
         // Drain the XLink queue BEFORE completing/unmapping DMA and closing PCI
         // (#1/#2). Waits for any in-flight rate transaction / vendor write to finish
@@ -4935,6 +5150,14 @@ kern_return_t IMPL(SymphonyThunderbridge, Stop)
             ivars->h2aDMA->CompleteDMA(kIODMACommandCompleteDMANoOptions);
             OSSafeReleaseNULL(ivars->h2aDMA);
         }
+        if (ivars->a2h2DMA) {
+            ivars->a2h2DMA->CompleteDMA(kIODMACommandCompleteDMANoOptions);
+            OSSafeReleaseNULL(ivars->a2h2DMA);
+        }
+        if (ivars->h2a2DMA) {
+            ivars->h2a2DMA->CompleteDMA(kIODMACommandCompleteDMANoOptions);
+            OSSafeReleaseNULL(ivars->h2a2DMA);
+        }
         ivars->meterDMAActive = false;
         ivars->meterWords = nullptr;
         if (ivars->meterDMA) {
@@ -4949,6 +5172,14 @@ kern_return_t IMPL(SymphonyThunderbridge, Stop)
         OSSafeReleaseNULL(ivars->h2aStreamBuffer);
         OSSafeReleaseNULL(ivars->a2hBuffer);
         OSSafeReleaseNULL(ivars->h2aBuffer);
+        OSSafeReleaseNULL(ivars->a2h2DMAMap);
+        OSSafeReleaseNULL(ivars->h2a2DMAMap);
+        OSSafeReleaseNULL(ivars->a2h2StreamMap);
+        OSSafeReleaseNULL(ivars->h2a2StreamMap);
+        OSSafeReleaseNULL(ivars->a2h2StreamBuffer);
+        OSSafeReleaseNULL(ivars->h2a2StreamBuffer);
+        OSSafeReleaseNULL(ivars->a2h2Buffer);
+        OSSafeReleaseNULL(ivars->h2a2Buffer);
         OSSafeReleaseNULL(ivars->meterMap);
         OSSafeReleaseNULL(ivars->meterBuffer);
         if (ivars->pciDevice) {
@@ -5109,7 +5340,7 @@ static void RecomputeCardMixer(SymphonyThunderbridge_IVars *iv,
     ThunderboltMixerState &state = iv->mixer[mixerID - 1];
     const uint32_t physicalBase = ThunderboltMixerPhysicalBase(mixerID);
     bool anySolo = state.swReturnSoloed;
-    for (int c = 0; c < 32 && !anySolo; c++)
+    for (int c = 0; c < 64 && !anySolo; c++)
         if (state.inputSoloed[c]) anySolo = true;
 
     bool rplay = !state.swReturnMuted && !state.masterMuted &&
@@ -5137,8 +5368,8 @@ static void RecomputeCardMixer(SymphonyThunderbridge_IVars *iv,
     WriteRegister(dev, mi, MixerCoefOffset(physicalBase, 128), returnCoefL);
     WriteRegister(dev, mi, MixerCoefOffset(physicalBase + 1, 129), returnCoefR);
 
-    // Fixed hardware inputs 0..31.
-    for (int c = 0; c < 32; c++) {
+    // Fixed hardware inputs 0..63 (Port 1: 0..31, Port 2: 32..63).
+    for (int c = 0; c < 64; c++) {
         bool play = !state.inputMuted[c] &&
                     (!anySolo || state.inputSoloed[c]);
         WriteMixerCoefPair(dev, mi, MixerCoefOffset(physicalBase, c),
@@ -5256,7 +5487,7 @@ kern_return_t SymphonyThunderbridge::SendVendorCommand(
             bool isMixerCh = (ch == kMixerChSwReturn || ch == kMixerChMaster ||
                               ch == kMixerChSwReturnLeft || ch == kMixerChSwReturnRight ||
                               ch == kMixerChMasterLeft || ch == kMixerChMasterRight ||
-                              ch < 32);
+                              ch < 64);
             if ((mixerID == 1 || mixerID == 2) && isMixerCmd && isMixerCh && payload && payloadLen >= 1) {
                 ThunderboltMixerState &state = ivars->mixer[mixerID - 1];
                 uint8_t p0 = payload[0];

@@ -105,7 +105,8 @@ struct DeviceSettingsView: View {
             // Per slot, and only for a module that HAS optical ports — a 16x16
             // has none at all (user guide p. 11), so a format picker for it
             // writes a setting nothing can act on.
-            if layout.hasOpticalPorts(slot: 0) || layout.hasOpticalPorts(slot: 1) {
+            if !appState.legacyDeviceProfile.isLegacy16X,
+               (layout.hasOpticalPorts(slot: 0) || layout.hasOpticalPorts(slot: 1)) {
                 Section("Optical Format") {
                     if layout.hasOpticalPorts(slot: 0) {
                         Picker("Card 1", selection: opticalFormatSelection(card: 0)) {
@@ -236,39 +237,46 @@ struct DeviceSettingsView: View {
 
 // P3F-20: Audio Interface Mode display + device info
             Section("Device") {
-                LabeledContent("Audio Interface Mode") {
-                    HStack(spacing: 5) {
-                        Text(deviceModeNames[deviceMode] ?? "Unknown")
-                        // The mode is read-only here -- it can only be changed on the
-                        // unit itself -- so the how-to is one tap away rather than a
-                        // permanent caption line under a row nobody can act on.
-                        Button { showAIMInfo.toggle() } label: {
-                            Image(systemName: "info.circle")
-                        }
-                        .buttonStyle(.plain)
-                        .help(Self.aimExplainer)
-                        .accessibilityLabel("About Audio Interface Mode")
-                        .popover(isPresented: $showAIMInfo, arrowEdge: .bottom) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(Self.aimExplainer)
-                                Text("Maestro works in Symphony and USB modes. What each "
-                                     + "of the four modes is for is in Help.")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .font(.callout)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(width: 300, alignment: .leading)
-                            .padding(14)
-                        }
+                @Bindable var state = appState
+                Picker("Converter Hardware", selection: $state.legacyDeviceProfile) {
+                    ForEach(LegacyDeviceProfile.allCases) { profile in
+                        Text(profile.displayName).tag(profile)
                     }
-                    .foregroundStyle(.secondary)
+                }
+                .help("Select Automatic for Symphony I/O, or choose your AD-16X / DA-16X configuration when connected via X-Symphony to a ThunderBridge.")
+
+                if !appState.legacyDeviceProfile.isLegacy16X {
+                    LabeledContent("Audio Interface Mode") {
+                        HStack(spacing: 5) {
+                            Text(deviceModeNames[deviceMode] ?? "Unknown")
+                            Button { showAIMInfo.toggle() } label: {
+                                Image(systemName: "info.circle")
+                            }
+                            .buttonStyle(.plain)
+                            .help(Self.aimExplainer)
+                            .accessibilityLabel("About Audio Interface Mode")
+                            .popover(isPresented: $showAIMInfo, arrowEdge: .bottom) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(Self.aimExplainer)
+                                    Text("Maestro works in Symphony and USB modes. What each "
+                                         + "of the four modes is for is in Help.")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .font(.callout)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(width: 300, alignment: .leading)
+                                .padding(14)
+                            }
+                        }
+                        .foregroundStyle(.secondary)
+                    }
                 }
 
                 if let device = appState.device {
-                    LabeledContent("Model", value: device.identifier.displayName)
+                    LabeledContent("Model", value: appState.activeDeviceTitle)
                     LabeledContent("Mode", value: device.identifier.mode.displayName)
-                    LabeledContent("Channels", value: "\(device.identifier.mode.channelCount)")
+                    LabeledContent("Channels", value: "\(appState.effectiveChannelCount)")
                 }
             }
 
@@ -1377,6 +1385,12 @@ struct SystemSetupView: View {
     /// Building the detection mechanism itself is out of scope here; this only
     /// stops the panel presenting a guess as a measurement.
     private func loadBoardReadings(device: any DeviceConnection) async {
+        if appState.legacyDeviceProfile.isLegacy16X {
+            let slots = appState.legacyDeviceProfile.boardSlots
+            board1Reading = BoardTypeReading(card: slots.slot1, source: .detected)
+            board2Reading = BoardTypeReading(card: slots.slot2, source: .detected)
+            return
+        }
         let simulating = SimulatedDevice.isSimulatingCards()
         let defaults = UserDefaults.standard
 

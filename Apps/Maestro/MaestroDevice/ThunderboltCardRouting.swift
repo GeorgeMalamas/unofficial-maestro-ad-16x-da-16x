@@ -26,8 +26,8 @@ public enum ThunderboltCardRouting {
     /// TDM slot of card mixer 0 output left (`SYMPHONY64_MIXER0_OUT`); mixer m
     /// occupies `128 + 2m` and `+1`.
     public static let mixerOutBase: UInt8 = 128
-    /// XLink TX channels on the port (`MAX_SYMPHONY_CHANNELS_ON_BUS`).
-    public static let channelCount: UInt8 = 32
+    /// XLink TX channels across Port 1 (0..31) and Port 2 (32..63).
+    public static let channelCount: UInt8 = 64
 
     public struct Route: Equatable, Sendable {
         /// XLink TX channel 0...31 (Symphony output: board 0 ch 0-15, board 1 ch 16-31).
@@ -48,13 +48,8 @@ public enum ThunderboltCardRouting {
     /// (IOBoard0 32-47 → 0-15, IOBoard1 48-63 → 16-31), nil otherwise.
     public static func channel(forDestination destination: UInt8) -> UInt8? {
         let board0 = SymphonyIORoutingAddress.ioBoard0Base
-        let board1 = SymphonyIORoutingAddress.ioBoard1Base
-        let perBoard = UInt8(SymphonyIORoutingAddress.channelsPerIOBoard)
-        if destination >= board0, destination < board0 &+ perBoard {
+        if destination >= board0, destination < board0 &+ channelCount {
             return destination &- board0
-        }
-        if destination >= board1, destination < board1 &+ perBoard {
-            return perBoard &+ (destination &- board1)
         }
         return nil
     }
@@ -64,11 +59,11 @@ public enum ThunderboltCardRouting {
     /// pairs → card mixer 0/1 outputs. Hardware inputs are not routable to
     /// outputs from the matrix and return nil.
     public static func slot(forSource source: UInt8) -> UInt8? {
-        if source < channelCount { return pciOutBase &+ source }
         let mixer0 = SymphonyIORoutingAddress.mixer0Base
         let mixer1 = SymphonyIORoutingAddress.mixer1Base
         if source == mixer0 || source == mixer0 &+ 1 { return mixerOutBase &+ (source &- mixer0) }
         if source == mixer1 || source == mixer1 &+ 1 { return mixerOutBase &+ 2 &+ (source &- mixer1) }
+        if source < channelCount { return pciOutBase &+ source }
         return nil
     }
 

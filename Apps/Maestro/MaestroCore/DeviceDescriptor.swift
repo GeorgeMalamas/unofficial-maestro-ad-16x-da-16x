@@ -1342,3 +1342,90 @@ public struct SoftwareInfoReport: Sendable, Equatable {
         return lines.joined(separator: "\n")
     }
 }
+
+// MARK: - X-Symphony Legacy Device Profile (AD-16X / DA-16X)
+
+/// Hardware profile for Apogee AD-16X and DA-16X converters connected via
+/// X-Symphony option cards to a Symphony 64 ThunderBridge or PCIe card.
+public enum LegacyDeviceProfile: String, CaseIterable, Identifiable, Sendable {
+    /// Normal Symphony I/O MKI behavior (reads 0xA1 option board IDs).
+    case automatic = "auto"
+    /// AD-16X (16 Analog In) + DA-16X (16 Analog Out) daisy-chained in Standard Routing on Port 1 (Ch 1–16).
+    case ad16xPlusDa16xStandard = "ad16x_da16x_std"
+    /// AD-16X on Slot 1 (Ch 1–16) + DA-16X on Slot 2 (Ch 17–32), or both in Advanced Routing.
+    case ad16xSlot1Da16xSlot2 = "ad16x_slot1_da16x_slot2"
+    /// Single AD-16X in Advanced Routing (16 Analog In + 16 Digital Out).
+    case ad16xAdvanced = "ad16x_adv"
+    /// Single DA-16X in Advanced Routing (16 Digital In + 16 Analog Out).
+    case da16xAdvanced = "da16x_adv"
+    /// Port 1: 2× AD-16X + 2× DA-16X (32 Analog In + 32 Analog Out across Ch 1–32).
+    case dualAd16xDa16x = "dual_ad16x_da16x"
+    /// Port 1: 2× AD-16X + 2× DA-16X (Ch 1–32 In/Out) + Port 2: 1× DA-16X (Ch 33–48 Out).
+    case twoAd16xThreeDa16x = "two_ad16x_three_da16x"
+    /// Port 1 + Port 2: 4× AD-16X + 4× DA-16X (64 Analog In + 64 Analog Out across Ch 1–64).
+    case quadAd16xDa16x = "quad_ad16x_da16x"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .automatic:               return "Automatic (Symphony I/O)"
+        case .ad16xPlusDa16xStandard:  return "AD-16X + DA-16X (16×16 Standard, Ch 1–16)"
+        case .ad16xSlot1Da16xSlot2:    return "AD-16X (Ch 1–16) + DA-16X (Ch 17–32)"
+        case .ad16xAdvanced:           return "AD-16X (16 Analog In / 16 Digital Out)"
+        case .da16xAdvanced:           return "DA-16X (16 Digital In / 16 Analog Out)"
+        case .dualAd16xDa16x:          return "2× AD-16X + 2× DA-16X (32×32 Analog, Port 1)"
+        case .twoAd16xThreeDa16x:      return "2× AD-16X + 3× DA-16X (32 In / 48 Out, Ports 1 & 2)"
+        case .quadAd16xDa16x:          return "4× AD-16X + 4× DA-16X (64×64 Analog, Ports 1 & 2)"
+        }
+    }
+
+    public var shortTitle: String {
+        switch self {
+        case .automatic:               return "Symphony I/O"
+        case .ad16xPlusDa16xStandard:  return "AD-16X + DA-16X"
+        case .ad16xSlot1Da16xSlot2:    return "AD-16X + DA-16X (32ch)"
+        case .ad16xAdvanced:           return "Apogee AD-16X"
+        case .da16xAdvanced:           return "Apogee DA-16X"
+        case .dualAd16xDa16x:          return "2× AD/DA-16X (32ch)"
+        case .twoAd16xThreeDa16x:      return "2× AD-16X + 3× DA-16X"
+        case .quadAd16xDa16x:          return "4× AD/DA-16X (64ch)"
+        }
+    }
+
+    /// True when an X-Symphony AD-16X / DA-16X profile is active.
+    public var isLegacy16X: Bool { self != .automatic }
+
+    /// True when the profile represents pure analog AD-16X / DA-16X converters
+    /// (suppresses ADAT/optical channels on any `.analogDA16` / `.analogAD16` slot).
+    public var suppressDigitalChannels: Bool {
+        switch self {
+        case .ad16xPlusDa16xStandard, .dualAd16xDa16x, .twoAd16xThreeDa16x, .quadAd16xDa16x:
+            return true
+        case .automatic, .ad16xSlot1Da16xSlot2, .ad16xAdvanced, .da16xAdvanced:
+            return false
+        }
+    }
+
+    /// Equivalent `IOCardType` slots across Port 1 (slot1, slot2) and Port 2 (slot3, slot4).
+    public var boardSlots: (slot1: IOCardType, slot2: IOCardType, slot3: IOCardType, slot4: IOCardType) {
+        switch self {
+        case .automatic:
+            return (.none, .none, .none, .none)
+        case .ad16xPlusDa16xStandard:
+            return (.analogADDA16, .none, .none, .none)
+        case .ad16xSlot1Da16xSlot2:
+            return (.analogAD16, .analogDA16, .none, .none)
+        case .ad16xAdvanced:
+            return (.analogAD16, .none, .none, .none)
+        case .da16xAdvanced:
+            return (.analogDA16, .none, .none, .none)
+        case .dualAd16xDa16x:
+            return (.analogADDA16, .analogADDA16, .none, .none)
+        case .twoAd16xThreeDa16x:
+            return (.analogADDA16, .analogADDA16, .analogDA16, .none)
+        case .quadAd16xDa16x:
+            return (.analogADDA16, .analogADDA16, .analogADDA16, .analogADDA16)
+        }
+    }
+}

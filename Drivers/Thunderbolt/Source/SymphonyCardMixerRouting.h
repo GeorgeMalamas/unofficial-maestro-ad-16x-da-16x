@@ -10,7 +10,8 @@ static constexpr uint32_t kThunderboltCardMixerHostPlaybackBase = 64;
 
 static constexpr bool IsThunderboltSoftwareReturnSource(uint8_t source)
 {
-    return source <= 7;
+    // 32 stereo pairs (0..31) cover all 64 host playback channels (TDM slots 64..127)
+    return source <= 31;
 }
 
 // The original PCIe mixer selected a stereo host-playback pair by advancing
@@ -48,7 +49,7 @@ static constexpr uint32_t ThunderboltMixerPhysicalBase(uint16_t mixerID)
 // Maestro. Payload: [xlinkChannel 0..31, tdmSlot 0..255, enable 0/1].
 static constexpr uint8_t  kThunderboltCardOutputRouteCommand   = 0xB5;
 static constexpr uint32_t kThunderboltCardOutputRoutingRegister = 0x2100;
-static constexpr uint32_t kThunderboltCardOutputChannels        = 32;
+static constexpr uint32_t kThunderboltCardOutputChannels        = 64;
 static constexpr uint32_t kThunderboltCardRouteEnable           = 0x100;
 
 static constexpr uint32_t ThunderboltCardOutputRouteRegister(uint8_t channel)
