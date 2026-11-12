@@ -14,26 +14,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-26-intel, macos-15-intel, macos-26]
+        os: [macos-26-intel, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 26 & Verify DriverKit SDK
+      - name: Build 64ch SIP-Off PKG Installer
         run: |
-          LATEST_XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
-          if [ -z "$LATEST_XCODE" ]; then LATEST_XCODE="/Applications/Xcode.app"; fi
-          echo "Using Xcode: $LATEST_XCODE"
-          sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
           sw_vers
           xcodebuild -version
           xcrun --sdk driverkit --show-sdk-path
-          which cmake || brew install cmake
-
-      - name: Build 64ch SIP-Off PKG Installer
-        run: |
-          bash Installer/build-sip-off-pkg.sh
+          xcrun --sdk driverkit --show-sdk-version
+          bash -x Installer/build-sip-off-pkg.sh
 
       - name: Upload PKG Installer Artifact
         uses: actions/upload-artifact@v4

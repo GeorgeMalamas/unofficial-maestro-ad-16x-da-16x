@@ -4,60 +4,80 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
-PAYLOAD_DIR="$BUILD_DIR/payload"
+CORE_ROOT="$BUILD_DIR/payload-core"
 OUTPUT_DIR="$BUILD_DIR/output"
 
-VERSION=$(grep -o '"[0-9]*\.[0-9]*\.[0-9]*"' "$REPO_ROOT/Apps/Maestro/MaestroCore/MaestroCore.swift" | tr -d '"' || echo "0.8.34")
-export SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
-SIGN_ID="$SIGNING_IDENTITY"
+VERSION="99.8.34"
+SIGN_ID="-"
 
 rm -rf "$BUILD_DIR"
-mkdir -p "$PAYLOAD_DIR" "$OUTPUT_DIR"
+mkdir -p "$CORE_ROOT/Applications" "$OUTPUT_DIR"
+
+DK_VER=$(xcrun --sdk driverkit --show-sdk-version)
+echo "Detected DriverKit SDK version: $DK_VER"
+
+sed -i '' "s/driverkit25\.2/driverkit${DK_VER}/g" "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh"
+sed -i '' "s/--deployment-target 25\.2/--deployment-target ${DK_VER}/g" "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh"
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 120" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :DTPlatformVersion $DK_VER" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :OSMinimumDriverKitVersion $DK_VER" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
 
-echo "=== [1/4] Building 64-Channel ThunderBridge DriverKit Extension (.dext) ==="
+echo "=== [1/3] Building 64-Channel ThunderBridge DriverKit Extension (.dext) ==="
 bash "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh" --clean --production
 
-echo "=== [2/4] Building Maestro.app (Release, arm64) ==="
-swift build --package-path "$REPO_ROOT/Apps/Maestro" -c release --arch arm64 --jobs "${MAESTRO_BUILD_JOBS:-4}"
+echo "=== [2/3] Compiling MaestroApp (arm64) via swiftc ==="
+SWIFTC=$(xcrun --sdk macosx -f swiftc)
+SDK=$(xcrun --sdk macosx --show-sdk-path)
+BUILD_TMP="$BUILD_DIR/swift-objs"
+mkdir -p "$BUILD_TMP"
 
-echo "=== [3/4] Building AudioServerPlugin & VolumeProxy ==="
-bash "$REPO_ROOT/Drivers/AudioServerPlugin/Scripts/build.sh"
-clang -o "$BUILD_DIR/MaestroVolumeProxy" "$REPO_ROOT/Drivers/VolumeProxy/MaestroVolumeProxy.c" \
-    -I "$REPO_ROOT/Drivers/Shared" \
-    -arch arm64 \
-    -mmacosx-version-min=15.0 \
-    -framework Foundation \
-    -framework CoreAudio \
-    -framework AudioToolbox \
-    -framework IOKit \
-    -Wall -Wextra -O2
+"$SWIFTC" -O -whole-module-optimization -suppress-warnings \
+    -sdk "$SDK" -target arm64-apple-macosx15.0 \
+    -parse-as-library -emit-library -static -emit-module \
+    -module-name MaestroCore \
+    -emit-module-path "$BUILD_TMP/MaestroCore.swiftmodule" \
+    -o "$BUILD_TMP/libMaestroCore.a" \
+    "$REPO_ROOT"/Apps/Maestro/MaestroCore/*.swift
 
-echo "=== [4/4] Assembling, Ad-Hoc Signing & Packaging .pkg ==="
-APP_BINARY="$REPO_ROOT/Apps/Maestro/.build/arm64-apple-macosx/release/MaestroApp"
-[ -f "$APP_BINARY" ] || APP_BINARY="$REPO_ROOT/Apps/Maestro/.build/release/MaestroApp"
+"$SWIFTC" -O -whole-module-optimization -suppress-warnings \
+    -sdk "$SDK" -target arm64-apple-macosx15.0 \
+    -I "$BUILD_TMP" \
+    -parse-as-library -emit-library -static -emit-module \
+    -module-name MaestroDevice \
+    -emit-module-path "$BUILD_TMP/MaestroDevice.swiftmodule" \
+    -o "$BUILD_TMP/libMaestroDevice.a" \
+    "$REPO_ROOT"/Apps/Maestro/MaestroDevice/*.swift
+
+"$SWIFTC" -O -whole-module-optimization -suppress-warnings \
+    -sdk "$SDK" -target arm64-apple-macosx15.0 \
+    -I "$BUILD_TMP" \
+    -parse-as-library \
+    -module-name MaestroApp \
+    "$REPO_ROOT"/Apps/Maestro/MaestroApp/*.swift \
+    "$BUILD_TMP/libMaestroDevice.a" \
+    "$BUILD_TMP/libMaestroCore.a" \
+    -framework SwiftUI -framework AppKit -framework Combine \
+    -framework ApplicationServices -framework CoreAudio -framework CoreGraphics \
+    -framework IOKit -framework IOUSBHost -framework SystemExtensions \
+    -framework Accelerate -framework UniformTypeIdentifiers \
+    -o "$BUILD_TMP/MaestroApp"
+
+echo "=== [3/3] Assembling, Ad-Hoc Signing & Packaging .pkg ==="
 APP_RESOURCES="$REPO_ROOT/Apps/Maestro/MaestroApp/Resources"
-APP_BUNDLE="$PAYLOAD_DIR/Applications/Maestro.app"
+APP_BUNDLE="$CORE_ROOT/Applications/Maestro.app"
 
-mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources" "$APP_BUNDLE/Contents/Frameworks"
-cp "$APP_BINARY" "$APP_BUNDLE/Contents/MacOS/MaestroApp"
-
-if otool -l "$APP_BUNDLE/Contents/MacOS/MaestroApp" | awk '$1 == "path" && $2 == "@loader_path" { found = 1 } END { exit found ? 0 : 1 }'; then
-    install_name_tool -delete_rpath "@loader_path" "$APP_BUNDLE/Contents/MacOS/MaestroApp"
-fi
-install_name_tool -add_rpath "@loader_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/MaestroApp"
-
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources" \
+         "$APP_BUNDLE/Contents/Library/SystemExtensions"
+cp "$BUILD_TMP/MaestroApp" "$APP_BUNDLE/Contents/MacOS/MaestroApp"
 cp "$APP_RESOURCES/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP_BUNDLE/Contents/Info.plist"
 
 for RES in AppIcon.icns AppIconRounded.icns Acknowledgements.html Privacy.html Terms.html; do
     [ -f "$APP_RESOURCES/$RES" ] && cp "$APP_RESOURCES/$RES" "$APP_BUNDLE/Contents/Resources/$RES"
 done
-
-SPARKLE_SRC="$REPO_ROOT/Apps/Maestro/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
-ditto "$SPARKLE_SRC" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
 
 [ -f "$REPO_ROOT/docs/UserManual.md" ] && cp "$REPO_ROOT/docs/UserManual.md" "$APP_BUNDLE/Contents/Resources/UserManual.md"
 cp "$SCRIPT_DIR/uninstall.sh" "$APP_BUNDLE/Contents/Resources/uninstall.sh"
@@ -69,75 +89,31 @@ rm -f "$DEXT_SRC/embedded.provisionprofile"
 
 codesign --sign "$SIGN_ID" --force --options runtime \
     --entitlements "$REPO_ROOT/Drivers/Thunderbolt/Entitlements/SymphonyThunderbridge.entitlements" \
-    --generate-entitlement-der \
-    "$DEXT_SRC"
-
-mkdir -p "$APP_BUNDLE/Contents/Library/SystemExtensions"
+    --generate-entitlement-der "$DEXT_SRC"
 ditto "$DEXT_SRC" "$APP_BUNDLE/Contents/Library/SystemExtensions/$DEXT_BUNDLE"
 
-mkdir -p "$PAYLOAD_DIR/Library/Audio/Plug-Ins/HAL"
-cp -R "$REPO_ROOT/Drivers/AudioServerPlugin/build/ApogeeSymIO.driver" "$PAYLOAD_DIR/Library/Audio/Plug-Ins/HAL/ApogeeSymIO.driver"
+find "$CORE_ROOT" -name '._*' -delete 2>/dev/null || true
 
-mkdir -p "$PAYLOAD_DIR/usr/local/bin"
-cp "$BUILD_DIR/MaestroVolumeProxy" "$PAYLOAD_DIR/usr/local/bin/MaestroVolumeProxy"
-
-mkdir -p "$PAYLOAD_DIR/Library/LaunchDaemons"
-cp "$REPO_ROOT/Drivers/VolumeProxy/com.danielraffel.Maestro.volumeproxy.plist" "$PAYLOAD_DIR/Library/LaunchDaemons/com.danielraffel.Maestro.volumeproxy.plist"
-
-find "$PAYLOAD_DIR" -name '._*' -delete 2>/dev/null || true
-
-codesign --sign "$SIGN_ID" --force --deep --options runtime "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
 codesign --sign "$SIGN_ID" --force --options runtime \
     --entitlements "$REPO_ROOT/Apps/Maestro/Maestro.entitlements" \
-    --generate-entitlement-der \
-    "$APP_BUNDLE"
-codesign --sign "$SIGN_ID" --force --deep --options runtime "$PAYLOAD_DIR/Library/Audio/Plug-Ins/HAL/ApogeeSymIO.driver"
-codesign --sign "$SIGN_ID" --force --options runtime "$PAYLOAD_DIR/usr/local/bin/MaestroVolumeProxy"
+    --generate-entitlement-der "$APP_BUNDLE"
 
-chmod +x "$SCRIPT_DIR/scripts-core/preinstall" "$SCRIPT_DIR/scripts-core/postinstall" "$SCRIPT_DIR/scripts-usb/postinstall"
-
-CORE_ROOT="$BUILD_DIR/payload-core"
-USB_ROOT="$BUILD_DIR/payload-usb"
-mkdir -p "$CORE_ROOT/Applications" "$USB_ROOT"
-ditto "$PAYLOAD_DIR/Applications/Maestro.app" "$CORE_ROOT/Applications/Maestro.app"
-for p in Library/Audio/Plug-Ins/HAL/ApogeeSymIO.driver usr/local/bin/MaestroVolumeProxy \
-         Library/LaunchDaemons/com.danielraffel.Maestro.volumeproxy.plist; do
-    mkdir -p "$USB_ROOT/$(dirname "$p")"
-    ditto "$PAYLOAD_DIR/$p" "$USB_ROOT/$p"
-done
-
-make_component_plist() {
-    pkgbuild --analyze --root "$1" "$2" >/dev/null
-    python3 - "$2" <<'PY'
+chmod +x "$SCRIPT_DIR/scripts-core/preinstall" "$SCRIPT_DIR/scripts-core/postinstall"
+pkgbuild --analyze --root "$CORE_ROOT" "$BUILD_DIR/component-core.plist" >/dev/null
+python3 - "$BUILD_DIR/component-core.plist" << 'PY'
 import plistlib, sys
-path = sys.argv[1]
-with open(path, 'rb') as f:
-    comps = plistlib.load(f)
-for c in comps:
-    c['BundleIsRelocatable'] = False
-with open(path, 'wb') as f:
-    plistlib.dump(comps, f)
+p = sys.argv[1]
+with open(p, "rb") as f:
+    c = plistlib.load(f)
+for x in c:
+    x["BundleIsRelocatable"] = False
+with open(p, "wb") as f:
+    plistlib.dump(c, f)
 PY
-}
 
-CORE_PKG="$BUILD_DIR/SymphonyMaestroCore.pkg"
-USB_PKG="$BUILD_DIR/SymphonyMaestroUSB.pkg"
-
-make_component_plist "$CORE_ROOT" "$BUILD_DIR/component-core.plist"
+DIST_PKG="$OUTPUT_DIR/UnofficialSymphonyMaestro-64ch-SIP-Off.pkg"
 pkgbuild --root "$CORE_ROOT" --component-plist "$BUILD_DIR/component-core.plist" \
     --scripts "$SCRIPT_DIR/scripts-core" --identifier "com.generouscorp.maestro.core" \
-    --version "$VERSION" --ownership recommended "$CORE_PKG" >/dev/null
-
-make_component_plist "$USB_ROOT" "$BUILD_DIR/component-usb.plist"
-pkgbuild --root "$USB_ROOT" --component-plist "$BUILD_DIR/component-usb.plist" \
-    --scripts "$SCRIPT_DIR/scripts-usb" --identifier "com.generouscorp.maestro.usb" \
-    --version "$VERSION" --ownership recommended "$USB_PKG" >/dev/null
-
-DIST_XML="$BUILD_DIR/distribution.xml"
-sed "s/version=\"[0-9]*\.[0-9]*\.[0-9]*\"/version=\"$VERSION\"/g" "$SCRIPT_DIR/distribution.xml" > "$DIST_XML"
-
-DIST_PKG="$OUTPUT_DIR/UnofficialSymphonyMaestro-${VERSION}-64ch-SIP-Off.pkg"
-productbuild --distribution "$DIST_XML" --resources "$SCRIPT_DIR/resources" \
-    --package-path "$BUILD_DIR" --version "$VERSION" "$DIST_PKG"
+    --version "$VERSION" --ownership recommended "$DIST_PKG"
 
 echo "SIP-Off Installer ready: $DIST_PKG"
