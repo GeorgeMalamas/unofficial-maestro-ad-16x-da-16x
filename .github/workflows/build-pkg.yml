@@ -7,14 +7,16 @@ on:
 
 jobs:
   build-pkg:
-    runs-on: macos-26
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Full Xcode & Verify DriverKit SDK
+      - name: Select Xcode 26 & Verify DriverKit SDK
         run: |
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          LATEST_XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || echo "/Applications/Xcode.app")
+          echo "Selecting Xcode: $LATEST_XCODE"
+          sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
           sw_vers
           xcodebuild -version
           xcrun --sdk driverkit --show-sdk-path
