@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acknowledgements — Maestro</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #333; }
+  h1 { font-size: 1.4em; font-weight: 600; }
+  h2 { font-size: 1.1em; font-weight: 600; margin-top: 1.5em; }
+  p { margin: 1em 0; }
+  ul { margin: 0.5em 0; padding-left: 1.5em; }
+</style>
+</head>
+<body>
+<h1>Acknowledgements</h1>
+<p>Maestro is built with the help of the following:</p>
+
+<h2>Apogee Electronics</h2>
+<p>Symphony I/O MK I firmware and USB protocol reference from the original Maestro 2 source code.</p>
+
+<h2>Apple Frameworks</h2>
+<ul>
+  <li>SwiftUI — User interface</li>
+  <li>CoreAudio — Audio device communication</li>
+  <li>IOKit — USB hardware access</li>
+  <li>AppKit — macOS system integration</li>
+  <li>AudioServerPlugin — Virtual audio device</li>
+</ul>
+
+<h2>Third-Party Dependencies</h2>
+<p>The Maestro desktop app has no third-party dependencies — all app code is first-party Swift. The audio driver uses the following open-source library:</p>
+
+<h3 style="font-size: 1em; font-weight: 600; margin-top: 1.2em;">libASPL</h3>
+<p>
+  <a href="https://github.com/gavv/libASPL">github.com/gavv/libASPL</a><br>
+  By Victor Gaydov and contributors.<br>
+  Used in the AudioServerPlugin driver to implement the CoreAudio virtual audio device.
+</p>
+<p>License: MIT</p>
+<pre style="font-size: 0.85em; background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap;">
+Copyright (c) libASPL authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</pre>
+<p>libASPL includes code derived from Apple's AudioServerPlugin sample code, which is also provided under an MIT-style license (Apple MIT License).</p>
+</body>
+</html>

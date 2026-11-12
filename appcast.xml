@@ -1,0 +1,448 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+  <channel>
+    <title>Maestro Updates</title>
+    <link>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases</link>
+    <description>Updates for Unofficial Symphony Maestro</description>
+    <language>en</language>
+    <item>
+      <title>Maestro 0.8.33</title>
+      <pubDate>Tue, 27 Oct 2026 21:26:52 GMT</pubDate>
+      <sparkle:version>0.8.33</sparkle:version>
+      <sparkle:shortVersionString>0.8.33</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.33</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- **Playback continues across sleep on ThunderBridge.** 0.8.32 restored audio after wake but then asked Core Audio to restart IO, which some players treat as a stop. On an ordinary wake that restart is not needed, so driver build 120 no longer requests it: anything still playing keeps playing through the wake. (Players that pause themselves when the Mac sleeps, such as Apple Music, Spotify and browsers, still need a press of play afterwards; they do the same on the built-in speakers.)
+- **No bursts or loops around a recovery.** The card stays muted until the Symphony link has re-locked, and its playback buffer is zeroed whenever Core Audio stops writing it.
+- **Better diagnostics** in Maestro's logs.
+- Driver change (build 120). The new driver takes over on the next ThunderBridge cable replug or restart.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.33)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.33/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="BLcFM4ePjcmzISNhbWgiUUhOgmGnVfKSYxkhDx1DiP9wOtM8bvddE/CjSTBqQjZ+PD1yGMTc17uP1LUU00VcCw==" length="3866820" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.32</title>
+      <pubDate>Tue, 27 Oct 2026 19:32:59 GMT</pubDate>
+      <sparkle:version>0.8.32</sparkle:version>
+      <sparkle:shortVersionString>0.8.32</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.32</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- **Driver build 116: audio survives sleep.** Sleep puts the ThunderBridge into its PCI low-power state, and on wake the card's own registers are back at power-on defaults even though the driver survives. Earlier drivers re-locked the Symphony link (so volume and settings worked) but never re-programmed the card's DMA engine, interrupt mask, routing or mixer, so Core Audio waited for interrupts that never came: everything looked connected, no audio, no meters. The driver now detects the reset from the card's control register and re-programs everything before re-locking. No replug needed after sleep.
+- Driver change (build 116). The new driver takes over on the next ThunderBridge cable replug or restart.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.32)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.32/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="KMit6KElQLzQ3JF/vAJot5GX8qEevGTCB63yrflFPuZarJVCi2s85RNl+IKoae+EIReUKitw69OOOZHp4laNCw==" length="3864395" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.31</title>
+      <pubDate>Tue, 27 Oct 2026 07:14:54 GMT</pubDate>
+      <sparkle:version>0.8.31</sparkle:version>
+      <sparkle:shortVersionString>0.8.31</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.31</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- **Driver build 114: a powered-off Symphony is detected again, and a Symphony that comes back is re-configured.** 0.8.30's driver took flowing audio interrupts as proof the Symphony was present, but the ThunderBridge keeps producing them with the Symphony switched off, so Maestro stayed Connected and a Symphony switched back on was never re-configured (silence with everything looking connected). The driver now reads the card's Symphony clock-detect bit on every sample and also acts on the card's latched "link was down" bits, re-locking and re-configuring the unit whenever it returns.
+- Driver change (build 114). The new driver takes over on the next ThunderBridge cable replug or restart.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.31)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.31/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="DQBFmu7oKZ19y5fLQaffyfMZDNdhSaiVTlXhQ+UzjuqB4Cobg8VhZOc4D6KJafaxjn3eYGAor/fv2I+d1JuIAQ==" length="3863267" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.30</title>
+      <pubDate>Tue, 27 Oct 2026 06:16:38 GMT</pubDate>
+      <sparkle:version>0.8.30</sparkle:version>
+      <sparkle:shortVersionString>0.8.30</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.30</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- **ThunderBridge: the driver now watches the Symphony link itself; Maestro no longer polls the hardware every second.** Driver build 113 follows Apple's model: the OS decides presence, and the driver samples the card's own clock-detect bit (every 2 s while the Symphony is off, every 5 s when idle, never while audio is streaming) and re-locks the link when the clock returns. On the developer's Mac the once-a-second traffic coincided with spontaneous Thunderbolt link drops that clicked the Symphony's relays; the new driver puts no steady-state traffic on the tunnel.
+- **Wake from sleep re-validates the link.** If the Thunderbolt tunnel was lost during sleep or the card shows a fault, the driver re-runs link initialization and restarts audio. Aimed at the no-audio-after-wake report; not yet confirmed on the reporting system.
+- Driver change (build 113). The new driver takes over on the next ThunderBridge cable replug or restart.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.30)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.30/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="Vh4zD0KaleXHWpNEIt7eKPhytOlgtaekVs+Oznwg82AwLlOI9F78ue7O+hmoLoLuKThpQlaUzEYu0/BQNsYzAQ==" length="3862469" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.29</title>
+      <pubDate>Mon, 26 Oct 2026 23:00:17 GMT</pubDate>
+      <sparkle:version>0.8.29</sparkle:version>
+      <sparkle:shortVersionString>0.8.29</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.29</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- **No more microphone prompt.** 0.8.26 asked for microphone access and claimed macOS 27 required it; that was wrong. Maestro's input meters come from the hardware on both ThunderBridge and USB, so the audio-input entitlement, the usage string, and the input tap are gone. macOS no longer shows the orange microphone indicator or the Mic Mode menu while Maestro is open. If you already allowed it, you can revoke it in System Settings › Privacy & Security › Microphone.
+- Still open: no audio after wake from sleep on ThunderBridge while everything looks connected. Under investigation; not fixed in this build.
+- No driver change (build 112).
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.29)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.29/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="2mqirsvGsE0szTeW2QP+AJ1jq50GoWziDNUkRQltohda40rTj3lxOWSvOL7ktRAQy9XBUFKbZDkGy96l5iFPDg==" length="3857211" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.28</title>
+      <pubDate>Fri, 23 Oct 2026 18:53:19 GMT</pubDate>
+      <sparkle:version>0.8.28</sparkle:version>
+      <sparkle:shortVersionString>0.8.28</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.28</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Driver build 112 fixes a kernel panic reported after the ThunderBridge lost power while the Mac was asleep. The driver no longer reads the card's registers while the system is powering down, and on wake it first checks the card is still present before touching it; a unit that lost power now shows as disconnected and comes back on replug instead of panicking the Mac.
+- Driver change (build 112): macOS asks you to approve the updated driver extension again only if it was not already approved.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.28)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.28/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="rCrqLZjuv7WYy+gUNniv2Ig9MCR/9LkKvCaw+3bMAgsUP1QtGs1dwWBwqZl+9iCZ+1Kn67AdY+JJ7MJEn/dxDQ==" length="3854386" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.27</title>
+      <pubDate>Thu, 22 Oct 2026 23:04:11 GMT</pubDate>
+      <sparkle:version>0.8.27</sparkle:version>
+      <sparkle:shortVersionString>0.8.27</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.27</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- 2x6 module: its digital channels now show as AES 1-2 followed by ADAT 1-8 (they were all labeled ADAT) in the routing grids, strips, mixer, headphone and S/PDIF menus. Nothing changes for other modules.
+- No driver change (build 111): no cable replug needed.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.27)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.27/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="t6iybg1c0C/k172WS72EslL3bq+MbpIOlb5MpzD0/ixmNqrYNIRG2zUVpmWYvj6t3afgGbkDxnoUB9QeM2+xDg==" length="3852865" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.26</title>
+      <pubDate>Thu, 22 Oct 2026 21:16:15 GMT</pubDate>
+      <sparkle:version>0.8.26</sparkle:version>
+      <sparkle:shortVersionString>0.8.26</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.26</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- macOS 27: Maestro now asks for microphone access on first launch. It reads the Symphony's input channels only to draw its input meters; nothing is recorded. Without this macOS 27 refused the meter tap, and for at least one ThunderBridge user that coincided with audio dropping out when Maestro opened.
+- No driver change (build 111): no cable replug needed.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.26)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.26/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="tLIu2R9QKSWwndeuJrKEuc96hmLmotc0xcoMM+UkqQ4J/W5UKUazwQS5VAejzxt9HJPL2N39qvNM00y9/KhSDQ==" length="3851669" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.25</title>
+      <pubDate>Thu, 22 Oct 2026 20:44:17 GMT</pubDate>
+      <sparkle:version>0.8.25</sparkle:version>
+      <sparkle:shortVersionString>0.8.25</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.25</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Input Routing over ThunderBridge now shows all 32 record channels after a reset or when returning to the tab (display only; the hardware was already correct).
+- No driver change (build 111): no cable replug needed.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.25)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.25/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="rk6VNz7sW3viMWwQ/hyb+JIzHvRoIrhdryvQSY1PmQ6Lt3MoAWSDgUDO0yRUI3NDYtsl4yUdrUJVjFVoWOkDDw==" length="3851595" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.24</title>
+      <pubDate>Thu, 22 Oct 2026 20:33:02 GMT</pubDate>
+      <sparkle:version>0.8.24</sparkle:version>
+      <sparkle:shortVersionString>0.8.24</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.24</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- With both USB and Thunderbolt connected, switching the unit from Symphony mode to a USB mode no longer briefly shows "Symphony disconnected" or needs a manual reconnect.
+- No driver change (build 111): no cable replug needed.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.24)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.24/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="yduYfJ1TZuTIP0D7m+35r9RJ5JpqGtCNOaXOdD/7IZ//0Z72P+3UASZjuOItERfGOPnfrKW+2ClAyQx8kIqeBw==" length="3851668" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.23</title>
+      <pubDate>Thu, 22 Oct 2026 20:09:50 GMT</pubDate>
+      <sparkle:version>0.8.23</sparkle:version>
+      <sparkle:shortVersionString>0.8.23</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.23</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Loading an Output Routing preset now applies the whole table: outputs the preset leaves empty are cleared instead of keeping their previous source.
+- Presets carry across connections: one saved over ThunderBridge loads correctly over USB and vice versa, with the Mixer rows in the right place.
+- No driver change (build 111): no cable replug needed.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.23)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.23/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="MAEB7ERzHtZ7aHxD5TVaxZXcibfitjr3jY+djEARosGdJEtSFrAxo/agX3GG8OwowNu572prMDZkYlwPIT+EBw==" length="3851511" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.22</title>
+      <pubDate>Thu, 22 Oct 2026 18:58:39 GMT</pubDate>
+      <sparkle:version>0.8.22</sparkle:version>
+      <sparkle:shortVersionString>0.8.22</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.22</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Output Routing now works on ThunderBridge: playback is routed on the ThunderBridge card, as the original Maestro did, so cross-routes such as DAW 1-2 onto Line 3/4 take effect. USB is unchanged.
+- Saved routes are restored after a Symphony power cycle or cable replug.
+- Reset Routing on ThunderBridge restores the straight-through table.
+- Clearing a route (clicking an active cell) no longer crashes Maestro.
+- Two-card units on ThunderBridge: the second card is fed by playback 17-32, as over USB.
+- New driver extension (build 111): one ThunderBridge cable unplug/replug after installing.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.22)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.22/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="4jXLRWV4O+ko9gNrHdxc7bzTSX2+pvhOnXxx0Bqc8fnFl+xpOBjErZfHUJynzZ/1iJW8natkZdWrnKDkArP1Dg==" length="3843297" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.21</title>
+      <pubDate>Thu, 22 Oct 2026 07:54:03 GMT</pubDate>
+      <sparkle:version>0.8.21</sparkle:version>
+      <sparkle:shortVersionString>0.8.21</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.21</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Both USB and Thunderbolt can stay connected: the Symphony's front-panel mode decides which connection Maestro uses, and switching modes is followed automatically in both directions.
+- Maestro prefers ThunderBridge only when the Symphony actually answers on it, otherwise USB; the status-bar rescan does the same.
+- While on USB, Maestro keeps watching ThunderBridge and moves back to it as soon as it answers.
+- Driver extension unchanged (build 110): no cable replug needed for this update.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.21)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.21/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="QCPjnXm+4dCw4jfWafLS6zjEoYdQ+Xs4eevwfwKU0RK9iSk0qBK8wznacs/K1/q/Ljdx71vY3wDzlqI22fbHCQ==" length="3834772" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.20</title>
+      <pubDate>Thu, 22 Oct 2026 06:39:50 GMT</pubDate>
+      <sparkle:version>0.8.20</sparkle:version>
+      <sparkle:shortVersionString>0.8.20</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.20</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- ThunderBridge: a Symphony power cycle now recovers on its own — "Symphony disconnected" within a second when it's off, back to Connected with clean audio a few seconds after it's on, no cable replug or sample-rate change.
+- ThunderBridge: a Symphony switched on after the driver started is picked up the same way; meters no longer move after the Symphony is powered off; opening Maestro no longer disturbs a running session.
+- Software Return: pan is back, no 5 dB drop at center, and the meters follow the faders, pan, and mute as on USB.
+- Clearer status (Disconnected / Symphony disconnected / Connected); the driver banner opens the right System Settings page directly.
+- USB: on plug-in, Maestro waits for "Symphony I/O : Maestro USB" before choosing an output.
+- Input, Output, and Mixer remember their scroll position for the session, without the shuffle.
+- After installing, unplug and replug the ThunderBridge cable once so the new driver extension (build 110) takes over.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.20)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.20/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="ROx3omkAir2MbrkPdV+fs6e1Zrj3mi1xei8tBnX9bjqpS3zOfKdNRFaXNV5Xb2bafD3gz4F9y/+FbEdEHaXvAg==" length="3828244" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.19</title>
+      <pubDate>Sun, 04 Oct 2026 21:09:51 +0000</pubDate>
+      <sparkle:version>0.8.19</sparkle:version>
+      <sparkle:shortVersionString>0.8.19</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.19</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Fixes Maestro USB visibility in the macOS Sound output menu by publishing its default-output capability during initial registration.
+- Preserves USB bridge recovery, ThunderBridge behavior, and the signed Sparkle update path.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.19)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.19/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="84/S806miJTliUk/IllL7QDFl6sWVrlwoGccHkoEJajFODzgNyfK8ZmPA0JH7bg5iZCeOvXFNwkscTFIe5VtDA==" length="3688746" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.18</title>
+      <pubDate>Sun, 04 Oct 2026 16:22:16 +0000</pubDate>
+      <sparkle:version>0.8.18</sparkle:version>
+      <sparkle:shortVersionString>0.8.18</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.18</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Recovers the Maestro USB virtual-audio bridge after an active producer stall without resetting legitimate idle sessions.
+- Adds shared-memory producer-liveness diagnostics and regression coverage.
+
+If you appreciate this work, please consider donating to the [San Francisco Marin Food Bank](https://www.sfmfoodbank.org/).
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.18)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.18/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="QAvJtsvpkFg+OGdz6peu+ew5eLxyTBST4FkCxBhUQmT8Xlf/ycerpBqFLQyptd1a8G7nTWDZfh5XtqtRkNheBA==" length="3688676" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.17</title>
+      <pubDate>Sat, 03 Oct 2026 23:55:00 +0000</pubDate>
+      <sparkle:version>0.8.17</sparkle:version>
+      <sparkle:shortVersionString>0.8.17</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.17</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Improves Sparkle updating and the manual updater fallback.
+- Improves ThunderBridge activation, upgrade, disconnect, and reconnect handling.
+- Adds clearer ThunderBridge diagnostics, including the active PCI personality.
+- Adds a high-performance ThunderBridge timing profile validated on hardware.
+- Updates artwork and setup/help guidance.
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.17)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.17/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="icoFPJ93tOCggBByOp/qXBq/Irn5BYf+PkPbvtpxEHEf0E3Dj8+BXw1VUqHrlJaMQ89ngL7mo25VNaVpDzmhAQ==" length="3687673" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.16</title>
+      <pubDate>Sat, 03 Oct 2026 17:10:00 +0000</pubDate>
+      <sparkle:version>0.8.16</sparkle:version>
+      <sparkle:shortVersionString>0.8.16</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.16</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Adds experimental support for the original Symphony 64 PCIe card (`pci19c2,2100`).
+- Shows the active PCI personality in Software Info and copied diagnostics.
+- Refreshes the connection state immediately when ThunderBridge is unplugged.
+- Uses the Apogee artwork consistently for the app icon.
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.16)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.16/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="6Wea+3wTSesjfnRS03W2G60hCZYoqMvEGtvVrxb6LSUZZFhlvaIYibeeiWVI4G53it1o3ojAeUWMpX9nejNYBw==" length="3687824" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.15</title>
+      <pubDate>Fri, 03 Oct 2026 03:10:00 +0000</pubDate>
+      <sparkle:version>0.8.15</sparkle:version>
+      <sparkle:shortVersionString>0.8.15</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.15</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Maintenance release to verify the signed Sparkle update path from 0.8.14.
+- Continues using the current Sparkle signing key.
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.15)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.15/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="HuEHYB8ki3zUEhW2/HtzpUBOLAiO+Ir575nVNIGLgXHp3b+SJWN4rbkVP9mvtNicT7F8YkhmAmNm/8anGlyPDw==" length="3501181" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.14</title>
+      <pubDate>Fri, 02 Oct 2026 22:36:00 +0000</pubDate>
+      <sparkle:version>0.8.14</sparkle:version>
+      <sparkle:shortVersionString>0.8.14</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.14</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Clearer ThunderBridge setup and driver-status guidance, including power, PC-32, Thunderbolt, Symphony mode, Driver Extensions approval, restart and upgrade-pending states.
+- USB-only users no longer receive persistent ThunderBridge setup warnings.
+- Optional monitor/software-return capabilities no longer appear as misleading startup errors.
+- Sparkle updater signing remains compatible with the existing key; if an update cannot install, install the signed package over the existing app.
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.14)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.14/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="2bQXbtWaMaFo0Q6ZBc2mYG40dag7RbvViIHT7TOLub/H2ywAhl9oweU6R/d1jo8J6q5XzBTnnNQNPHYh1y1/Ag==" length="3595506" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+    <item>
+      <title>Maestro 0.8.13</title>
+      <pubDate>Tue, 22 Sep 2026 06:12:00 +0000</pubDate>
+      <sparkle:version>0.8.13</sparkle:version>
+      <sparkle:shortVersionString>0.8.13</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:fullReleaseNotesLink>https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.13</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+## What's new
+
+- Uses the same outlined PillMenu styling as Output’s Stereo (Out 1–2) control.
+- Matches the lower blank label-slot height and hover/native menu behavior.
+- Preserves the verified stereo source assignment routing and existing DAW/Direct Monitor behavior.
+- Sparkle scheduled update checks remain optional; you can disable them in **Device Settings › Preferences** while **Check for Updates…** remains available.
+
+[Read the full release notes on GitHub](https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/tag/v0.8.13)
+      ]]></description>
+      <enclosure url="https://github.com/danielraffel/unofficial-symphony-maestro-mk1/releases/download/v0.8.13/UnofficialSymphonyMaestro.pkg" sparkle:edSignature="ryBxoOuHWe8SxhbwMKCCxjSWs3gJ3turgnsMUAMDTkAca2iN1U+NeK2DNdWhZhd+zCW2vQeyNbvXAO3I+2DcBg==" length="3497410" type="application/octet-stream" sparkle:installationType="package"></enclosure>
+    </item>
+  </channel>
+</rss><!-- sparkle-signatures:
+edSignature: Rdu01shIxKuS2ilYB3cVD6L/8iHpCKgTfAuPfbBPyrk8baTCXdFAE/64x7l7HTuFmwtonsLijgUUaRTjAklYCg==
+length: 35727
+-->
