@@ -10,13 +10,13 @@
 	<string>MaestroApp</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIconRounded.icns</string>
-	<key>CFBundleIconName</key>
-	<string>AppIconRounded.icns</string>
 	<key>CFBundleIconFiles</key>
 	<array>
 		<string>AppIconRounded.icns</string>
 		<string>AppIcon.icns</string>
 	</array>
+	<key>CFBundleIconName</key>
+	<string>AppIconRounded.icns</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.danielraffel.maestro</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -26,9 +26,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.0.0</string>
+	<string>99.8.34</string>
 	<key>CFBundleVersion</key>
-	<string>0.0.0</string>
+	<string>99.8.34</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -43,12 +43,7 @@
 	<false/>
 	<key>SUEnableSystemProfiling</key>
 	<false/>
-	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/danielraffel/unofficial-symphony-maestro-mk1/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<!-- Keep this in sync with the public key recorded for the `ed25519`
-	     Sparkle signing item in the release keychain.  The old WRcK... key
-	     was retired; current feeds/packages are signed by this key. -->
 	<string>A/1JcspAs19gjff6/VQabIVYG5UQgHa/bvXCKqzxI9U=</string>
 </dict>
 </plist>

@@ -357,7 +357,7 @@ public final class ThunderboltDeviceConnection: DeviceConnection, @unchecked Sen
         guard dextClient.isConnected else {
             throw DeviceConnectionError.notConnected
         }
-        if isXSymphonyMode && !Self.fpgaLocalCommands.contains(request.bRequest) {
+        if isXSymphonyMode && !Self.fpgaLocalCommands.contains(request.request) {
             return
         }
         try dextClient.sendFromUSBRequest(request)
