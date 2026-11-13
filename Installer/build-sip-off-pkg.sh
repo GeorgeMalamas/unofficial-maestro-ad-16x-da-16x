@@ -19,12 +19,12 @@ echo "Detected DriverKit SDK version: $DK_VER"
 sed -i '' "s/driverkit25\.2/driverkit${DK_VER}/g" "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh"
 sed -i '' "s/--deployment-target 25\.2/--deployment-target ${DK_VER}/g" "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh"
 
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 120" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 122" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :DTPlatformVersion $DK_VER" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :OSMinimumDriverKitVersion $DK_VER" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
 
 echo "=== [1/3] Building 64-Channel ThunderBridge DriverKit Extension (.dext) ==="
-bash "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh" --clean --production
+bash "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh" --clean
 
 echo "=== [2/3] Compiling MaestroApp (arm64) via swiftc ==="
 SWIFTC=$(xcrun --sdk macosx -f swiftc)
