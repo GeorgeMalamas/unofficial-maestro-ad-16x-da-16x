@@ -19,7 +19,7 @@ echo "Detected DriverKit SDK version: $DK_VER"
 sed -i '' "s/driverkit25\.2/driverkit${DK_VER}/g" "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh"
 sed -i '' "s/--deployment-target 25\.2/--deployment-target ${DK_VER}/g" "$REPO_ROOT/Drivers/Thunderbolt/Scripts/build.sh"
 
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 122" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 123" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :DTPlatformVersion $DK_VER" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :OSMinimumDriverKitVersion $DK_VER" "$REPO_ROOT/Drivers/Thunderbolt/Info.plist"
 

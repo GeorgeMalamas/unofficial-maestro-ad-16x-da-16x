@@ -1182,7 +1182,15 @@ static bool ChangeSampleRate(IOPCIDevice *dev, uint8_t memIndex, double newRate,
         return false;
     }
 
-    STLOG("ChangeSampleRate: complete — %.0f Hz (locked + rate-verified + stable)", newRate);
+    SendXLinkCommand(dev, memIndex, kXLinkCmdAddrAll, kXLinkCmdUnmute, 0x80);
+    SendXLink2Command(dev, memIndex, kXLinkCmdAddrAll, kXLinkCmdUnmute, 0x80);
+    for (uint8_t a = 1; a <= 8; a++) {
+        SendXLinkCommand(dev, memIndex, a, kXLinkCmdUnmute, 0x80);
+        SendXLink2Command(dev, memIndex, a, kXLinkCmdUnmute, 0x80);
+    }
+    IOSleep(20);
+
+    STLOG("ChangeSampleRate: complete + XLink UNMUTE sent — %.0f Hz", newRate);
     return true;
 }
 
@@ -1511,14 +1519,14 @@ static bool ConfigureSymphonyLink(SymphonyThunderbridge_IVars *ivars, double rat
     // ── 19. Unmute ──────────────────────────────────────────────────
     // Legacy: SetDeviceMute(bus, addr, false) → UNMUTE, data=0x80
 
-    if (!SendXLinkCommand(ivars->pciDevice, ivars->barMemoryIndex,
-                           kXLinkCmdAddrAll, kXLinkCmdUnmute, 0x80)) {
-        STERR("XLink: UNMUTE timeout");
-    } else {
-        STLOG("XLink: UNMUTE sent (global unmute)");
+    SendXLinkCommand(ivars->pciDevice, ivars->barMemoryIndex,
+                     kXLinkCmdAddrAll, kXLinkCmdUnmute, 0x80);
+    SendXLink2Command(ivars->pciDevice, ivars->barMemoryIndex,
+                      kXLinkCmdAddrAll, kXLinkCmdUnmute, 0x80);
+    for (uint8_t a = 1; a <= 8; a++) {
+        SendXLinkCommand(ivars->pciDevice, ivars->barMemoryIndex, a, kXLinkCmdUnmute, 0x80);
+        SendXLink2Command(ivars->pciDevice, ivars->barMemoryIndex, a, kXLinkCmdUnmute, 0x80);
     }
-    (void)SendXLink2Command(ivars->pciDevice, ivars->barMemoryIndex,
-                            kXLinkCmdAddrAll, kXLinkCmdUnmute, 0x80);
     IOSleep(50);
 
     // ── 19b. Configure Symphony IO speaker + routing ────────────────
@@ -1545,11 +1553,21 @@ static bool ConfigureSymphonyLink(SymphonyThunderbridge_IVars *ivars, double rat
         uint8_t startupHP2Volume = 20; // 20 dB attenuation fallback
         uint8_t startupHP2Mute = 0;    // unmuted fallback
         uint8_t readback = 0;
-        if (ReadVendorRequest(ivars->pciDevice, ivars->barMemoryIndex,
-                              symphonyAddr, kSIOCmd_SpeakerMode, 0,
-                              &readback, 1, txSeq)) {
-            startupMode = readback;
+        bool isSymphonyIO = ReadVendorRequest(ivars->pciDevice, ivars->barMemoryIndex,
+                                              symphonyAddr, kSIOCmd_SpeakerMode, 0,
+                                              &readback, 1, txSeq);
+        if (!isSymphonyIO) {
+            STLOG("XLink: No Symphony IO MCU response (X-Symphony AD-16X/DA-16X mode) — skipping MSG_BYTE config");
+            out->lineMonitor = false;
+            out->speakerAttenuation = 0;
+            out->speakerMute = false;
+            out->hp1Attenuation = 20;
+            out->hp1Mute = false;
+            out->monitorAttenuation = 0;
+            out->monitorMute = false;
+            return true;
         }
+        startupMode = readback;
         if (ReadVendorRequest(ivars->pciDevice, ivars->barMemoryIndex,
                               symphonyAddr, kSIOCmd_SpeakerVolume, 0,
                               &readback, 1, txSeq)) {
