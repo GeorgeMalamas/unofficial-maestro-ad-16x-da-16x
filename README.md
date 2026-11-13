@@ -1,3 +1,6 @@
+# Maestro and 64 x 64 IO Thunderbridge Driver for Apogee AD-16X and DA-16X based on the great work of Daniel Raffe for the Apogee Symphony mk1
+# I will update this readme as work progresses and release the first package
+
 # Unofficial Symphony Maestro for Apogee Symphony I/O MK I
 
 _Note: I don’t have a tip jar, but if you find this useful and you’re motivated to donate, please feel free to make a donation to the [SF-Marin Food Bank](https://www.sfmfoodbank.org). That would certainly mean a lot to me. They’re a great organization and incredibly efficient with their funds._
